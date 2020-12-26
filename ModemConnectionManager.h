@@ -1,8 +1,10 @@
 #ifndef MODEMCONNECTIONMANAGER_H
 #define MODEMCONNECTIONMANAGER_H
 
+#include <QMap>
 #include <QObject>
 #include <QProcess>
+#include <QRegularExpression>
 #include <QSharedPointer>
 
 class ModemConnectionManager : public QObject
@@ -75,8 +77,7 @@ private Q_SLOTS:
 private:
   struct Configuration
   {
-    QList<QByteArray> options;
-    QList<QByteArray> chat;
+    QMap<QByteArray, QRegularExpression> chat;
     QByteArray modemResetCommand;
   } _configuration;
   State _state;

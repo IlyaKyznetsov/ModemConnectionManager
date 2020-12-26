@@ -40,6 +40,7 @@ static bool readSettings(QIODevice &device, QSettings::SettingsMap &map)
     }
     else if ("Modem Commands" == group)
     {
+      D(line);
       const QString key = group + "/chat";
       if (!map.contains(key))
         map.insert(key, QStringList());
@@ -89,6 +90,7 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
   settings.endGroup();
   settings.beginGroup("Modem Commands");
   const QStringList chat = settings.value("chat").toStringList();
+  D(chat);
   settings.endGroup();
   settings.beginGroup("Connection Settings");
   const QByteArray phone = settings.value("Phone").toByteArray();
@@ -117,7 +119,50 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
   data.append("TIMEOUT 5");
   for (const QString &item : chat)
   {
-    data.append("OK-AT-OK \'" + item.toLatin1() + "\'");
+    QStringList group(item.split("' '"));
+    int pos = -1;
+    QByteArray cmd;
+    QByteArray check;
+    QString rx;
+    for (QString elm : group)
+    {
+      ++pos;
+      auto size = elm.size();
+      if (0 == size)
+        continue;
+      if ('\'' == elm[size - 1])
+      {
+        elm.remove(size - 1, 1);
+        --size;
+        if (0 == size)
+          continue;
+      }
+      if ('\'' == elm[0])
+      {
+        elm.remove(0, 1);
+        --size;
+        if (0 == size)
+          continue;
+      }
+
+      switch (pos)
+      {
+        case 0: cmd = elm.toLatin1(); break;
+        case 1: check = elm.toLatin1(); break;
+        case 2: rx = elm; break;
+        default: throw global::Exception("Bad [Modem Commands] format");
+      }
+
+      if (!cmd.isEmpty() && !check.isEmpty())
+        data.append(check + " \'" + cmd + "\'");
+      if (!cmd.isEmpty() && !rx.isEmpty())
+      {
+        QRegularExpression qrx(rx);
+        if (!qrx.isValid())
+          throw global::Exception("Bad [Modem Commands] regular expression");
+        D("XXXXXXX" << *_configuration.chat.insert(cmd, qrx));
+      }
+    }
   }
   data.append("OK \'ATD" + phone + "\'");
   data.append("CONNECT \\c");
@@ -126,7 +171,7 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
 
   // Create peer configuration:
   file.setFileName("/etc/ppp/peers/ModemConnection");
-  //  file.setFileName("/home/ilya/Development/ModemConnectionManager/ModemConnection");
+  file.setFileName("/home/ilya/Development/ModemConnectionManager/ModemConnection");
   if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
     global::Exception("Cannot create peer");
   // -rwxr-xr-x
@@ -156,9 +201,9 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
 
   // Create secrets:
   const int count = 2;
-  const QString files[count] = {"/etc/ppp/chap-secrets", "/etc/ppp/pap-secrets"};
-  //  const QString files[count] = {"/home/ilya/Development/ModemConnectionManager/chap-secrets",
-  //                                "/home/ilya/Development/ModemConnectionManager/pap-secrets"};
+  //  const QString files[count] = {"/etc/ppp/chap-secrets", "/etc/ppp/pap-secrets"};
+  const QString files[count] = {"/home/ilya/Development/ModemConnectionManager/chap-secrets",
+                                "/home/ilya/Development/ModemConnectionManager/pap-secrets"};
   for (int i = 0; i != count; ++i)
   {
     file.setFileName(files[i]);
