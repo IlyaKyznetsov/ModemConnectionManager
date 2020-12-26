@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/">
+        <file>ModemHardRestarting.sh</file>
+        <file>ModemConnectionManager.conf</file>
+    </qresource>
+</RCC>
