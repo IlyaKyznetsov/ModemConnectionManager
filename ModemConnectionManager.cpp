@@ -171,7 +171,8 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
 
   // Create peer configuration:
   file.setFileName("/etc/ppp/peers/ModemConnection");
-  file.setFileName("/home/ilya/Development/ModemConnectionManager/ModemConnection");
+  _pppdArguments.append({"call", "ModemConnection"});
+  //  file.setFileName("/home/ilya/Development/ModemConnectionManager/ModemConnection");
   if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
     global::Exception("Cannot create peer");
   // -rwxr-xr-x
@@ -182,16 +183,7 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
     data.append("connect \'chat -v -s -S -f " + chatPath + "\'");
   else
     data.append("connect \'chat -v -s -S -f " + chatPath + " -T" + " " + accessPoint + "\'");
-  //  if (!user.isEmpty())
-  //  {
-  //    data.append("user");
-  //    data.append(user);
-  //  }
-  //  if (!password.isEmpty())
-  //  {
-  //    data.append("password");
-  //    data.append(password);
-  //  }
+
   for (const QString &item : options)
   {
     data.append(item.toLatin1());
@@ -201,14 +193,16 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
 
   // Create secrets:
   const int count = 2;
-  //  const QString files[count] = {"/etc/ppp/chap-secrets", "/etc/ppp/pap-secrets"};
-  const QString files[count] = {"/home/ilya/Development/ModemConnectionManager/chap-secrets",
-                                "/home/ilya/Development/ModemConnectionManager/pap-secrets"};
-  for (int i = 0; i != count; ++i)
+  const QString files[count] = {"/etc/ppp/chap-secrets", "/etc/ppp/pap-secrets"};
+  //  const QString files[count] = {"/home/ilya/Development/ModemConnectionManager/chap-secrets",
+  //                                "/home/ilya/Development/ModemConnectionManager/pap-secrets"};
+
+  if (!user.isEmpty() && !password.isEmpty())
   {
-    file.setFileName(files[i]);
-    if (!user.isEmpty() && !password.isEmpty())
+    _pppdArguments.append({"user", user});
+    for (int i = 0; i != count; ++i)
     {
+      file.setFileName(files[i]);
       if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
         throw global::Exception("Cannot write secrets files");
       file.write(user + '\t' + '*' + '\t' + password);
@@ -249,7 +243,7 @@ bool ModemConnectionManager::connection()
   connect(_pppd.data(), &QProcess::readyReadStandardError, this, &ModemConnectionManager::pppdError);
   connect(_pppd.data(), QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
           &ModemConnectionManager::pppdFinished);
-  _pppd->start("/usr/sbin/pppd", QStringList{"call", "ModemConnection"});
+  _pppd->start("/usr/sbin/pppd", _pppdArguments);
   bool isStarted = _pppd->waitForStarted(5000);
   const int pid = (isStarted ? _pppd->processId() : -1);
   if (pid != _state.internet.PID)

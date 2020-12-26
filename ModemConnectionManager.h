@@ -82,6 +82,7 @@ private:
   } _configuration;
   State _state;
   QSharedPointer<QProcess> _pppd;
+  QStringList _pppdArguments;
 };
 
 #endif // MODEMCONNECTIONMANAGER_H
