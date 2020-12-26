@@ -40,7 +40,6 @@ static bool readSettings(QIODevice &device, QSettings::SettingsMap &map)
     }
     else if ("Modem Commands" == group)
     {
-      D(line);
       const QString key = group + "/chat";
       if (!map.contains(key))
         map.insert(key, QStringList());
@@ -50,6 +49,12 @@ static bool readSettings(QIODevice &device, QSettings::SettingsMap &map)
     }
   }
   return true;
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+ModemConnectionManager::State ModemConnectionManager::state() const
+{
+  return _state;
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
@@ -153,16 +158,17 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
         default: throw global::Exception("Bad [Modem Commands] format");
       }
 
+      /*
       if (!cmd.isEmpty() && !check.isEmpty())
         data.append(check + " \'" + cmd + "\'");
       if (!cmd.isEmpty() && !rx.isEmpty())
       {
-        D("CCCCCCCC" << cmd << check << rx);
         QRegularExpression qrx("^" + cmd + " (" + rx + ")");
         if (!qrx.isValid())
           throw global::Exception("Bad [Modem Commands] regular expression");
         _chat.insert(cmd, qrx);
       }
+      */
     }
   }
   data.append("OK \'ATD" + phone + "\'");
@@ -258,17 +264,21 @@ bool ModemConnectionManager::connection()
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 void ModemConnectionManager::pppdOutput()
 {
-  PF();
-  QRegularExpression rxSendCmd("*got it send \\(ATI*\\)$");
   QByteArray data = _pppd->readAllStandardOutput().simplified();
   if (data.isEmpty())
     return;
   data.replace("^M", "");
+
+  PF();
   D(data);
+
+  // Parse AT Commands responses
   if (SIM7600E_H(data))
   {
     emit stateChanged(_state);
   }
+
+  // Parse Pppd output
 
   return;
 }

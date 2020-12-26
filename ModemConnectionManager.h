@@ -59,8 +59,8 @@ public:
       QString PrimaryDNS;
       QString SecondaryDNS;
     } internet;
-    void debug() const;
   };
+  State state() const;
 
   explicit ModemConnectionManager(const QString &path = QString(), QObject *parent = nullptr);
   ~ModemConnectionManager();
@@ -76,7 +76,7 @@ private Q_SLOTS:
 
 private:
   QByteArray _modemResetCommand;
-  QMap<QByteArray, QRegularExpression> _chat;
+  // QMap<QByteArray, QRegularExpression> _chat;
   QSharedPointer<QProcess> _pppd;
   QStringList _pppdArguments;
   State _state;
