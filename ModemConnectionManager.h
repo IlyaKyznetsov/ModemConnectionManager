@@ -75,14 +75,12 @@ private Q_SLOTS:
   void pppdFinished(int exitCode, int exitStatus);
 
 private:
-  struct Configuration
-  {
-    QMap<QByteArray, QRegularExpression> chat;
-    QByteArray modemResetCommand;
-  } _configuration;
-  State _state;
+  QByteArray _modemResetCommand;
+  QMap<QByteArray, QRegularExpression> _chat;
   QSharedPointer<QProcess> _pppd;
   QStringList _pppdArguments;
+  State _state;
+  bool SIM7600E_H(const QByteArray &data);
 };
 
 #endif // MODEMCONNECTIONMANAGER_H

@@ -69,8 +69,8 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
   const QByteArray baud = settings.value("Baud").toByteArray();
   if (baud.isEmpty())
     global::Exception("[Modem Configuration] Baud not exist");
-  _configuration.modemResetCommand = settings.value("Reset").toByteArray();
-  if (_configuration.modemResetCommand.isEmpty())
+  _modemResetCommand = settings.value("Reset").toByteArray();
+  if (_modemResetCommand.isEmpty())
   {
     QFile file("://ModemHardRestarting.sh");
     file.open(QIODevice::ReadOnly);
@@ -157,10 +157,11 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
         data.append(check + " \'" + cmd + "\'");
       if (!cmd.isEmpty() && !rx.isEmpty())
       {
-        QRegularExpression qrx(rx);
+        D("CCCCCCCC" << cmd << check << rx);
+        QRegularExpression qrx("^" + cmd + " (" + rx + ")");
         if (!qrx.isValid())
           throw global::Exception("Bad [Modem Commands] regular expression");
-        D("XXXXXXX" << *_configuration.chat.insert(cmd, qrx));
+        _chat.insert(cmd, qrx);
       }
     }
   }
@@ -258,11 +259,17 @@ bool ModemConnectionManager::connection()
 void ModemConnectionManager::pppdOutput()
 {
   PF();
-
+  QRegularExpression rxSendCmd("*got it send \\(ATI*\\)$");
   QByteArray data = _pppd->readAllStandardOutput().simplified();
   if (data.isEmpty())
     return;
+  data.replace("^M", "");
   D(data);
+  if (SIM7600E_H(data))
+  {
+    emit stateChanged(_state);
+  }
+
   return;
 }
 
@@ -286,52 +293,59 @@ void ModemConnectionManager::pppdFinished(int exitCode, int exitStatus)
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-QString toString(ModemConnectionManager::State::Network::registration status)
+bool ModemConnectionManager::SIM7600E_H(const QByteArray &data)
 {
-  switch (status)
+  int index = data.indexOf(' ');
+  if (-1 == index)
+    return false;
+  const QByteArray &cmd = data.left(index);
+  if ("ATI" == cmd)
   {
-    case ModemConnectionManager::State::Network::registration::NotRegistered: return "not registered";
-    case ModemConnectionManager::State::Network::registration::RegisteredHomeNetwork: return "registered, home network";
-    case ModemConnectionManager::State::Network::registration::Searching: return "not registered, searching";
-    case ModemConnectionManager::State::Network::registration::RegistrationDenied: return "registration denied";
-    case ModemConnectionManager::State::Network::registration::Unknown: return "unknown";
-    case ModemConnectionManager::State::Network::registration::RegisteredRoaming: return "registered, roaming";
+    QRegularExpression rx("Manufacturer: (.*) Model: (.*) Revision: (.*) IMEI: (.*) \\+GCAP");
+    QRegularExpressionMatch match = rx.match(data);
+    if (!match.isValid() || !match.hasMatch())
+      return false;
+    _state.modem.Manufacturer = match.captured(1);
+    _state.modem.Model = match.captured(2);
+    _state.modem.Revision = match.captured(3);
+    _state.modem.IMEI = match.captured(4);
+    return true;
   }
-  return QString();
-}
-
-/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-QString toString(ModemConnectionManager::State::Network::gprs status)
-{
-  switch (status)
+  else if ("AT+CICCID" == cmd)
   {
-    case ModemConnectionManager::State::Network::gprs::NotRegistered: return "not registered";
-    case ModemConnectionManager::State::Network::gprs::RegisteredHomeNetwork: return "registered, home network";
-    case ModemConnectionManager::State::Network::gprs::Searching:
-      return "not registered, trying to attach or searching";
-    case ModemConnectionManager::State::Network::gprs::RegistrationDenied: return "registration denied";
-    case ModemConnectionManager::State::Network::gprs::Unknown: return "unknown";
-    case ModemConnectionManager::State::Network::gprs::RegisteredRoaming: return "registered, roaming";
+    QRegularExpression rx("\\+ICCID: (.*)  OK");
+    QRegularExpressionMatch match = rx.match(data);
+    if (!match.isValid() || !match.hasMatch())
+      return false;
+    _state.sim.ICCID = match.captured(1);
+    return true;
   }
-  return QString();
-}
-
-/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-void ModemConnectionManager::State::debug() const
-{
-  PF();
-  D("Modem Manufacturer:" << modem.Manufacturer);
-  D("Modem Model:" << modem.Model);
-  D("Modem Revision:" << modem.Revision);
-  D("Modem IMEI:" << modem.IMEI);
-  D("SIM ICCID:" << sim.ICCID);
-  D("SIM Operator:" << sim.Operator);
-  D("Registration:" << toString(network.Registration));
-  D("GPRS:" << toString(network.GPRS));
-  D("Internet PID" << internet.PID);
-  D("Internet Interface" << internet.Interface);
-  D("Internet LocalAddress" << internet.LocalAddress);
-  D("Internet RemoteAddress" << internet.RemoteAddress);
-  D("Internet PrimaryDNS" << internet.PrimaryDNS);
-  D("Internet SecondaryDNS" << internet.SecondaryDNS);
+  else if ("AT+CSPN?" == cmd)
+  {
+    QRegularExpression rx("\\+CSPN: \"(.*)\",[0-1]  OK");
+    QRegularExpressionMatch match = rx.match(data);
+    if (!match.isValid() || !match.hasMatch())
+      return false;
+    _state.sim.Operator = match.captured(1);
+    return true;
+  }
+  else if ("AT+CREG?" == cmd)
+  {
+    QRegularExpression rx("\\+CREG: ([0-9],[0-9])  OK");
+    QRegularExpressionMatch match = rx.match(data);
+    if (!match.isValid() || !match.hasMatch())
+      return false;
+    _state.network.Registration = State::Network::registration(match.captured(1).right(1).toInt());
+    return true;
+  }
+  else if ("AT+CGREG?" == cmd)
+  {
+    QRegularExpression rx("\\+CGREG: ([0-9],[0-9])  OK");
+    QRegularExpressionMatch match = rx.match(data);
+    if (!match.isValid() || !match.hasMatch())
+      return false;
+    _state.network.GPRS = State::Network::gprs(match.captured(1).right(1).toInt());
+    return true;
+  }
+  return false;
 }
