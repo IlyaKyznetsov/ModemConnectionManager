@@ -57,36 +57,21 @@ int main(int argc, char *argv[])
 {
   QCoreApplication a(argc, argv);
 
-  const QByteArray data{
-      "ATI^M^M Manufacturer: SIMCOM INCORPORATED^M Model: SIMCOM_SIM7600E-H^M Revision: SIM7600M22_V1.1^M IMEI: "
-      "867584033254140^M +GCAP: +CGSM,+DS,+ES^M ^M OK -- got it send (ATI^M)"};
-  QRegularExpression rxCommand("got it send \\((.*)\\^M\\)$");
-  QRegularExpressionMatch matchCommand = rxCommand.match(data);
-  D(rxCommand.isValid() << matchCommand.isValid());
-  D(matchCommand.hasMatch());
-  QString command = matchCommand.captured(1);
-  D(command << matchCommand.capturedTexts());
-  //  for (int index = 1; index != rxm.lastCapturedIndex(); ++index)
-  //  {
-  //    D(rxm.captured(index));
-  //  }
-
-  QString arg = "(*.)";
-  QString test = ("^" + command + "\\^M\\^M " + "(.*)");
-  D("HHHHHHHHH:" << test);
-  QRegularExpression rxResponse(test);
-  QRegularExpressionMatch matchResponse = rxResponse.match(data);
-  D(rxResponse.isValid() << matchResponse.isValid());
-  D(matchResponse.hasMatch());
-  QString response = matchResponse.captured(1);
-  D(response << matchCommand.capturedTexts());
-
-  //  exit(0);
-
   // Read configuration
   ModemConnectionManager mcm;
   QObject::connect(&mcm, &ModemConnectionManager::stateChanged, &debugState);
   mcm.connection();
+
+  QTimer test;
+  test.setInterval(30000);
+  test.setSingleShot(true);
+  QObject::connect(&test, &QTimer::timeout, [&mcm]() {
+    D("### Hard reset modem ###");
+    D(mcm.modemHardReset());
+    D("### Connection ###");
+    mcm.connection();
+  });
+  test.start();
 
   return a.exec();
 }

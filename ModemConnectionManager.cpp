@@ -50,6 +50,24 @@ static bool readSettings(QIODevice &device, QSettings::SettingsMap &map)
   }
   return true;
 }
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+inline void clearState(ModemConnectionManager::State &state, bool all)
+{
+  state.internet.PID = 0;
+  if (state.network.Registration != ModemConnectionManager::State::Network::registration::NotRegistered)
+    state.network.Registration = ModemConnectionManager::State::Network::registration::Unknown;
+  if (state.network.GPRS != ModemConnectionManager::State::Network::gprs::NotRegistered)
+    state.network.GPRS = ModemConnectionManager::State::Network::gprs::Unknown;
+  state.internet.Interface = state.internet.LocalAddress = state.internet.RemoteAddress = state.internet.PrimaryDNS =
+      state.internet.SecondaryDNS = QString();
+  if (all)
+  {
+    state.network.Registration = ModemConnectionManager::State::Network::registration::NotRegistered;
+    state.network.GPRS = ModemConnectionManager::State::Network::gprs::NotRegistered;
+    state.modem.Manufacturer = state.modem.Model = state.modem.Revision = state.modem.IMEI = state.sim.ICCID =
+        state.sim.Operator = QString();
+  }
+}
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 ModemConnectionManager::State ModemConnectionManager::state() const
@@ -88,6 +106,7 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
     file.setPermissions(QFileDevice::ReadUser | QFileDevice::WriteUser | QFileDevice::ExeUser | QFileDevice::ReadGroup |
                         QFileDevice::ExeGroup | QFileDevice::ExeOther);
     file.close();
+    _modemResetCommand = "/tmp/ModemHardRestarting.sh";
   }
   settings.endGroup();
   settings.beginGroup("Pppd Settings");
@@ -125,6 +144,7 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
   for (const QString &item : chat)
   {
     QStringList group(item.split("' '"));
+    D(group);
     int pos = -1;
     QByteArray cmd;
     QByteArray check;
@@ -158,9 +178,9 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
         default: throw global::Exception("Bad [Modem Commands] format");
       }
 
-      /*
       if (!cmd.isEmpty() && !check.isEmpty())
         data.append(check + " \'" + cmd + "\'");
+      /*
       if (!cmd.isEmpty() && !rx.isEmpty())
       {
         QRegularExpression qrx("^" + cmd + " (" + rx + ")");
@@ -223,28 +243,30 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
 ModemConnectionManager::~ModemConnectionManager()
 {
   PF();
-  if (_pppd)
-  {
-    if (QProcess::NotRunning != _pppd->state())
-    {
-      _pppd->terminate();
-      _pppd->waitForFinished(-1);
-    }
-    _pppd.reset();
-  }
+  disconnection();
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 bool ModemConnectionManager::connection()
 {
   PF();
+  disconnection();
+
   // Pppd setup and connection
+  _reconnectionTimer.reset(new QTimer());
   _pppd.reset(new QProcess());
-  if (!_pppd)
+  if (!_pppd || !_reconnectionTimer)
   {
+    _pppd.reset();
+    _reconnectionTimer.reset();
     W("Cannot create pppd process");
     return false;
   }
+
+  _reconnectionTimer->setSingleShot(true);
+  _reconnectionTimer->setInterval(20000);
+  connect(_reconnectionTimer.data(), &QTimer::timeout, this, &ModemConnectionManager::connection);
+
   _pppd->setProcessChannelMode(QProcess::MergedChannels);
   connect(_pppd.data(), &QProcess::readyReadStandardOutput, this, &ModemConnectionManager::pppdOutput);
   connect(_pppd.data(), &QProcess::readyReadStandardError, this, &ModemConnectionManager::pppdError);
@@ -262,23 +284,110 @@ bool ModemConnectionManager::connection()
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+void ModemConnectionManager::disconnection()
+{
+  PF();
+  if (_reconnectionTimer)
+  {
+    if (_reconnectionTimer->isActive())
+      _reconnectionTimer->stop();
+    _reconnectionTimer.reset();
+  }
+  if (_pppd)
+  {
+    if (QProcess::NotRunning != _pppd->state())
+    {
+      _pppd->terminate();
+      _pppd->waitForFinished(-1);
+    }
+    _pppd.reset();
+  }
+
+  D((int)_state.network.Registration << (int)_state.network.GPRS);
+  clearState(_state, false);
+  emit stateChanged(_state);
+}
+
+bool ModemConnectionManager::modemHardReset()
+{
+  PF();
+  disconnection();
+  D("Command:" << _modemResetCommand);
+  QProcess process;
+  process.start("bash", {_modemResetCommand});
+  bool isOk = process.waitForStarted(5000);
+  if (isOk)
+  {
+    clearState(_state, true);
+    emit stateChanged(_state);
+    isOk = process.waitForFinished(-1);
+  }
+  return isOk;
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 void ModemConnectionManager::pppdOutput()
 {
+  PF();
+
   QByteArray data = _pppd->readAllStandardOutput().simplified();
   if (data.isEmpty())
     return;
   data.replace("^M", "");
 
-  PF();
   D(data);
 
   // Parse AT Commands responses
-  if (SIM7600E_H(data))
-  {
-    emit stateChanged(_state);
-  }
+  bool isStateChanged = SIM7600E_H(data);
 
   // Parse Pppd output
+  QRegularExpression rx("Using interface (\\S+) ");
+  QRegularExpressionMatch match = rx.match(data);
+  match = rx.match(data);
+  if (match.isValid() && match.hasMatch())
+  {
+    _state.internet.Interface = match.captured(1);
+    isStateChanged = true;
+  }
+
+  const QString ip4 =
+      "(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.(25[0-5]|2[0-4]["
+      "0-9]|[01]?[0-9][0-9]?)\\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)";
+
+  rx.setPattern(QString("remote IP address (%1)").arg(ip4));
+  match = rx.match(data);
+  if (match.isValid() && match.hasMatch())
+  {
+    _state.internet.RemoteAddress = match.captured(1);
+    isStateChanged = true;
+  }
+
+  rx.setPattern(QString("local IP address (%1)").arg(ip4));
+  match = rx.match(data);
+  if (match.isValid() && match.hasMatch())
+  {
+    _state.internet.LocalAddress = match.captured(1);
+    isStateChanged = true;
+  }
+
+  rx.setPattern(QString("primary DNS address (%1)").arg(ip4));
+  match = rx.match(data);
+  if (match.isValid() && match.hasMatch())
+  {
+    _state.internet.PrimaryDNS = match.captured(1);
+    isStateChanged = true;
+  }
+
+  rx.setPattern(QString("secondary DNS address (%1)").arg(ip4));
+  match = rx.match(data);
+  if (match.isValid() && match.hasMatch())
+  {
+    _state.internet.SecondaryDNS = match.captured(1);
+    isStateChanged = true;
+  }
+
+  if (isStateChanged)
+    emit stateChanged(_state);
 
   return;
 }
@@ -296,10 +405,17 @@ void ModemConnectionManager::pppdError()
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 void ModemConnectionManager::pppdFinished(int exitCode, int exitStatus)
 {
-  PF();
   const QProcess::ExitStatus status = QProcess::ExitStatus(exitStatus);
+
+  clearState(_state, false);
+  emit stateChanged(_state);
+
   DF(status << exitCode);
-  D(qobject_cast<QProcess *>(sender())->readAll());
+  if (_reconnectionTimer && _pppd)
+  {
+    D("Try reconnect after: " << _reconnectionTimer->interval() / 1000 << "secs");
+    _reconnectionTimer->start();
+  }
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/

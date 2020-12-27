@@ -6,6 +6,7 @@
 #include <QProcess>
 #include <QRegularExpression>
 #include <QSharedPointer>
+#include <QTimer>
 
 class ModemConnectionManager : public QObject
 {
@@ -38,7 +39,7 @@ public:
         RegistrationDenied = 3,
         Unknown = 4,
         RegisteredRoaming = 5
-      } Registration;
+      } Registration = registration::NotRegistered;
       enum class gprs
       {
         NotRegistered = 0,
@@ -47,12 +48,12 @@ public:
         RegistrationDenied = 3,
         Unknown = 4,
         RegisteredRoaming = 5
-      } GPRS;
+      } GPRS = gprs::NotRegistered;
     } network;
 
     struct Internet
     {
-      int PID;
+      int PID = 0;
       QString Interface;
       QString LocalAddress;
       QString RemoteAddress;
@@ -64,7 +65,11 @@ public:
 
   explicit ModemConnectionManager(const QString &path = QString(), QObject *parent = nullptr);
   ~ModemConnectionManager();
+
+public Q_SLOTS:
   bool connection();
+  void disconnection();
+  bool modemHardReset();
 
 Q_SIGNALS:
   void stateChanged(const State state);
@@ -77,6 +82,7 @@ private Q_SLOTS:
 private:
   QByteArray _modemResetCommand;
   // QMap<QByteArray, QRegularExpression> _chat;
+  QSharedPointer<QTimer> _reconnectionTimer;
   QSharedPointer<QProcess> _pppd;
   QStringList _pppdArguments;
   State _state;
