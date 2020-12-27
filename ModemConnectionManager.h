@@ -1,10 +1,8 @@
 #ifndef MODEMCONNECTIONMANAGER_H
 #define MODEMCONNECTIONMANAGER_H
 
-#include <QMap>
 #include <QObject>
 #include <QProcess>
-#include <QRegularExpression>
 #include <QSharedPointer>
 #include <QTimer>
 
@@ -81,7 +79,7 @@ private Q_SLOTS:
 
 private:
   QByteArray _modemResetCommand;
-  // QMap<QByteArray, QRegularExpression> _chat;
+  int _reconnectTimeout = 20;
   QSharedPointer<QTimer> _reconnectionTimer;
   QSharedPointer<QProcess> _pppd;
   QStringList _pppdArguments;

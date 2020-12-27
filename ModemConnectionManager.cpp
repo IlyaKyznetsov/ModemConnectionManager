@@ -3,6 +3,7 @@
 #include <QByteArray>
 #include <QFile>
 #include <QIODevice>
+#include <QRegularExpression>
 #include <QSettings>
 
 #include "Global.h"
@@ -117,6 +118,7 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
   D(chat);
   settings.endGroup();
   settings.beginGroup("Connection Settings");
+  _reconnectTimeout = settings.value("ReconnectTimeout", 20).toInt();
   const QByteArray phone = settings.value("Phone").toByteArray();
   if (phone.isEmpty())
     global::Exception("[Connection Settings] Phone not exist");
@@ -128,7 +130,6 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
   QList<QByteArray> data;
 
   // Create chat configuration:
-  //  const QByteArray chatPath = "/home/ilya/Development/ModemConnectionManager/ModemConnection.chat";
   const QByteArray chatPath = "/tmp/ModemConnection.chat";
   QFile file(chatPath);
   if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
@@ -180,15 +181,6 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
 
       if (!cmd.isEmpty() && !check.isEmpty())
         data.append(check + " \'" + cmd + "\'");
-      /*
-      if (!cmd.isEmpty() && !rx.isEmpty())
-      {
-        QRegularExpression qrx("^" + cmd + " (" + rx + ")");
-        if (!qrx.isValid())
-          throw global::Exception("Bad [Modem Commands] regular expression");
-        _chat.insert(cmd, qrx);
-      }
-      */
     }
   }
   data.append("OK \'ATD" + phone + "\'");
@@ -199,7 +191,6 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
   // Create peer configuration:
   file.setFileName("/etc/ppp/peers/ModemConnection");
   _pppdArguments.append({"call", "ModemConnection"});
-  //  file.setFileName("/home/ilya/Development/ModemConnectionManager/ModemConnection");
   if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
     global::Exception("Cannot create peer");
   // -rwxr-xr-x
@@ -221,8 +212,6 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
   // Create secrets:
   const int count = 2;
   const QString files[count] = {"/etc/ppp/chap-secrets", "/etc/ppp/pap-secrets"};
-  //  const QString files[count] = {"/home/ilya/Development/ModemConnectionManager/chap-secrets",
-  //                                "/home/ilya/Development/ModemConnectionManager/pap-secrets"};
 
   if (!user.isEmpty() && !password.isEmpty())
   {
@@ -264,7 +253,7 @@ bool ModemConnectionManager::connection()
   }
 
   _reconnectionTimer->setSingleShot(true);
-  _reconnectionTimer->setInterval(20000);
+  _reconnectionTimer->setInterval(_reconnectTimeout * 1000);
   connect(_reconnectionTimer.data(), &QTimer::timeout, this, &ModemConnectionManager::connection);
 
   _pppd->setProcessChannelMode(QProcess::MergedChannels);
@@ -312,7 +301,6 @@ bool ModemConnectionManager::modemHardReset()
 {
   PF();
   disconnection();
-  D("Command:" << _modemResetCommand);
   QProcess process;
   process.start("bash", {_modemResetCommand});
   bool isOk = process.waitForStarted(5000);
