@@ -10,7 +10,6 @@ CONFIG -= app_bundle
 SOURCES += \
         Global.cpp \
         ModemConnectionManager.cpp \
-        SystemUtils.cpp \
         main.cpp
 
 # Default rules for deployment.
@@ -20,8 +19,7 @@ else: unix:!android: target.path = /opt/$${TARGET}/bin
 
 HEADERS += \
     Global.h \
-    ModemConnectionManager.h \
-    SystemUtils.h
+    ModemConnectionManager.h
 
 RESOURCES += \
     resources.qrc

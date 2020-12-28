@@ -114,14 +114,14 @@ void ModemConnectionManager::connection()
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 void ModemConnectionManager::disconnection()
 {
-  _connectionHope = 0;
+  _reconnectionHope = _resetConnectionHopes;
   QMetaObject::invokeMethod(this, "_disconnection", Qt::QueuedConnection);
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 void ModemConnectionManager::modemHardReset()
 {
-  _connectionHope = 0;
+  _reconnectionHope = _resetConnectionHopes;
   QMetaObject::invokeMethod(this, "_modemHardReset", Qt::QueuedConnection);
 }
 
@@ -159,8 +159,14 @@ bool ModemConnectionManager::_connection()
     _state.internet.PID = pid;
     emit stateChanged(_state);
   }
-  ++_connectionHope;
-  D("ConnectionHope:" << _connectionHope);
+  if (_resetConnectionHopes)
+  {
+    if (!_reconnectionHope)
+      modemHardReset();
+    else
+      --_reconnectionHope;
+  }
+  D("ConnectionHope:" << _reconnectionHope);
   return isStarted;
 }
 
@@ -184,7 +190,6 @@ void ModemConnectionManager::_disconnection()
     _pppd.reset();
   }
 
-  D((int)_state.network.Registration << (int)_state.network.GPRS);
   clearState(_state, false);
   emit stateChanged(_state);
 }
@@ -192,7 +197,6 @@ void ModemConnectionManager::_disconnection()
 bool ModemConnectionManager::_modemHardReset()
 {
   PF();
-  _disconnection();
   QProcess process;
   process.start(_modemResetCommand);
   bool isOk = process.waitForStarted(5000);
@@ -242,7 +246,6 @@ void ModemConnectionManager::_postConstructOwner()
     file.close();
     _modemResetCommand = "/tmp/ModemHardRestarting.sh";
   }
-  _resetConnectionHopes = settings.value("ResetConnectionHopes", 10).toInt();
   settings.endGroup();
   settings.beginGroup("Pppd Settings");
   QStringList options = settings.value("options").toStringList();
@@ -252,7 +255,8 @@ void ModemConnectionManager::_postConstructOwner()
   D(chat);
   settings.endGroup();
   settings.beginGroup("Connection Settings");
-  _reconnectTimeout = settings.value("ReconnectTimeout", 20).toInt();
+  _reconnectionHope = _resetConnectionHopes = settings.value("ResetConnectionHopes", 0).toInt();
+  _reconnectTimeout = settings.value("ReconnectTimeout", 0).toInt();
   const QByteArray phone = settings.value("Phone").toByteArray();
   if (phone.isEmpty())
     global::Exception("[Connection Settings] Phone not exist");
@@ -365,7 +369,7 @@ void ModemConnectionManager::_postConstructOwner()
 void ModemConnectionManager::_preDestroyOwner()
 {
   PF();
-  _connectionHope = 0;
+  _reconnectionHope = _resetConnectionHopes;
   _disconnection();
 }
 
@@ -457,8 +461,6 @@ void ModemConnectionManager::_pppdFinished(int exitCode, int exitStatus)
   DF(status << exitCode);
   if (_reconnectionTimer && _pppd)
   {
-    if (_resetConnectionHopes && _resetConnectionHopes < _connectionHope)
-      modemHardReset();
     D("Try reconnect after: " << _reconnectionTimer->interval() / 1000 << "secs");
     _reconnectionTimer->start();
   }

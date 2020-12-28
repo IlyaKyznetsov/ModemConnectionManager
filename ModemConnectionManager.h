@@ -100,7 +100,7 @@ private:
   QByteArray _modemResetCommand;
   int _reconnectTimeout;
   int _resetConnectionHopes;
-  int _connectionHope;
+  int _reconnectionHope;
   QSharedPointer<QTimer> _reconnectionTimer;
   QSharedPointer<QProcess> _pppd;
   QStringList _pppdArguments;
