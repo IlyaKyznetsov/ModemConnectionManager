@@ -1,1 +1,57 @@
-# ModemConnectionManager
+# ModemConnectionManager -- менеджер модемного соединения
+
+# Пример использования:
+ModemConnectionManager::instance().connection();
+
+# Получение состояния соединения:
+QObject::connect(&ModemConnectionManager::instance(), &ModemConnectionManager::stateChanged, &debugState);
+
+# Конфигурация задается в файле ModemConnectionManager.conf (путь до пользовательского файла можно задать агрументом ModemConnectionManager::instance(path)): 
+
+[Modem Configuration]
+Modem = /dev/ttyUSB2
+Baud = 115200
+# Команда для перезагрузки модема средствами ОС
+# Reset = ""
+[Pppd Settings]
+nodetach
+nocrtscts
+noauth
+# Изменить маршрут по умолчанию
+defaultroute
+# Использовать DNS-сервера провайдера
+usepeerdns
+# Номер ppp-интерфейса
+unit 0
+# Перепосылать пакеты авторизации каждые 60 секунд
+chap-interval 60
+# Отключаем любое сжатие
+nopcomp
+novjccomp
+nobsdcomp
+nodeflate
+noaccomp
+# Обработка обрывов соединения
+lcp-echo-interval 2
+lcp-echo-failure 3
+# IP адрес мы будем получать от провайдера
+noipdefault
+[Modem Commands]
+'ATZ' 'OK-AT-OK'
+'ATI' 'OK-AT-OK'
+'AT+CICCID' 'OK-AT-OK'
+'AT+CSPN?' 'OK-AT-OK'
+'AT+CREG?' 'OK-AT-OK'
+'AT+CGREG?' 'OK-AT-OK'
+[Connection Settings]
+# Число попыток установки соединения до перезагрузки модема средствами ОС (ставить сильно маленьким не рекомендуется)
+ResetConnectionHopes = 10
+# Таймаут перед повторной попыткой установки соединения (ставить сильно маленьким не рекомендуется)
+ReconnectTimeout = 20
+Phone = *99#
+# Megafon:
+AccessPoint = internet
+# Beeline:
+#AccessPoint = beeline.ru
+#User = beeline
+#Password = beeline
