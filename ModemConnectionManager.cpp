@@ -71,17 +71,150 @@ inline void clearState(ModemConnectionManager::State &state, bool all)
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+ModemConnectionManager &ModemConnectionManager::instance(const QString &path)
+{
+  static ModemConnectionManager obj(path);
+  return obj;
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 ModemConnectionManager::State ModemConnectionManager::state() const
 {
   return _state;
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *parent) : QObject(parent)
+ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *parent)
+    : QObject(parent), _configurationPath(path)
 {
+  _mutex.lock();
+  connect(&_thread, &QThread::started, this, &ModemConnectionManager::_postConstructOwner, Qt::QueuedConnection);
+  connect(&_thread, &QThread::finished, this, &ModemConnectionManager::_preDestroyOwner, Qt::QueuedConnection);
+  moveToThread(&_thread);
+  _thread.start();
+  DF("--- wait for started");
+  _condition.wait(&_mutex);
+  _mutex.unlock();
+  DF("--- started");
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+ModemConnectionManager::~ModemConnectionManager()
+{
+  PF();
+  _thread.quit();
+  _thread.wait();
+}
+
+void ModemConnectionManager::connection()
+{
+  QMetaObject::invokeMethod(this, "_connection", Qt::QueuedConnection);
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+void ModemConnectionManager::disconnection()
+{
+  _connectionHope = 0;
+  QMetaObject::invokeMethod(this, "_disconnection", Qt::QueuedConnection);
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+void ModemConnectionManager::modemHardReset()
+{
+  _connectionHope = 0;
+  QMetaObject::invokeMethod(this, "_modemHardReset", Qt::QueuedConnection);
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+bool ModemConnectionManager::_connection()
+{
+  PF();
+  _disconnection();
+
+  // Pppd setup and connection
+  _reconnectionTimer.reset(new QTimer());
+  _pppd.reset(new QProcess());
+  if (!_pppd || !_reconnectionTimer)
+  {
+    _pppd.reset();
+    _reconnectionTimer.reset();
+    W("Cannot create pppd process");
+    return false;
+  }
+
+  _reconnectionTimer->setSingleShot(true);
+  _reconnectionTimer->setInterval(_reconnectTimeout * 1000);
+  connect(_reconnectionTimer.data(), &QTimer::timeout, this, &ModemConnectionManager::connection);
+
+  _pppd->setProcessChannelMode(QProcess::MergedChannels);
+  connect(_pppd.data(), &QProcess::readyReadStandardOutput, this, &ModemConnectionManager::_pppdOutput);
+  connect(_pppd.data(), &QProcess::readyReadStandardError, this, &ModemConnectionManager::_pppdError);
+  connect(_pppd.data(), QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
+          &ModemConnectionManager::_pppdFinished);
+  _pppd->start("/usr/sbin/pppd", _pppdArguments);
+  bool isStarted = _pppd->waitForStarted(5000);
+  const int pid = (isStarted ? _pppd->processId() : -1);
+  if (pid != _state.internet.PID)
+  {
+    _state.internet.PID = pid;
+    emit stateChanged(_state);
+  }
+  ++_connectionHope;
+  D("ConnectionHope:" << _connectionHope);
+  return isStarted;
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+void ModemConnectionManager::_disconnection()
+{
+  PF();
+  if (_reconnectionTimer)
+  {
+    if (_reconnectionTimer->isActive())
+      _reconnectionTimer->stop();
+    _reconnectionTimer.reset();
+  }
+  if (_pppd)
+  {
+    if (QProcess::NotRunning != _pppd->state())
+    {
+      _pppd->terminate();
+      _pppd->waitForFinished(-1);
+    }
+    _pppd.reset();
+  }
+
+  D((int)_state.network.Registration << (int)_state.network.GPRS);
+  clearState(_state, false);
+  emit stateChanged(_state);
+}
+
+bool ModemConnectionManager::_modemHardReset()
+{
+  PF();
+  _disconnection();
+  QProcess process;
+  process.start(_modemResetCommand);
+  bool isOk = process.waitForStarted(5000);
+  if (isOk)
+  {
+    clearState(_state, true);
+    emit stateChanged(_state);
+    isOk = process.waitForFinished(-1);
+  }
+  return isOk;
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+void ModemConnectionManager::_postConstructOwner()
+{
+  PF();
+  disconnect(&_thread, &QThread::started, this, &ModemConnectionManager::_postConstructOwner);
   // Read configuration
   QSettings::Format format = QSettings::registerFormat("ModemConnectionManager", readSettings, nullptr);
-  const QString &rpath = (QFile::exists(path) ? path : "://ModemConnectionManager.conf");
+  const QString rpath =
+      (!_configurationPath.isEmpty() && QFile::exists(_configurationPath) ? _configurationPath
+                                                                          : "://ModemConnectionManager.conf");
   QSettings settings(rpath, format, this);
   // settings.setIniCodec("UTF-8");
 
@@ -109,6 +242,7 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
     file.close();
     _modemResetCommand = "/tmp/ModemHardRestarting.sh";
   }
+  _resetConnectionHopes = settings.value("ResetConnectionHopes", 10).toInt();
   settings.endGroup();
   settings.beginGroup("Pppd Settings");
   QStringList options = settings.value("options").toStringList();
@@ -197,10 +331,7 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
   file.setPermissions(QFileDevice::ReadUser | QFileDevice::WriteUser | QFileDevice::ExeUser | QFileDevice::ReadGroup |
                       QFileDevice::ExeGroup | QFileDevice::ExeOther);
   data = {modem.mid(modem.lastIndexOf('/') + 1), baud};
-  if (accessPoint.isEmpty())
-    data.append("connect \'chat -v -s -S -f " + chatPath + "\'");
-  else
-    data.append("connect \'chat -v -s -S -f " + chatPath + " -T" + " " + accessPoint + "\'");
+  data.append("connect \'chat -v -s -S -f " + chatPath + (accessPoint.isEmpty() ? "\'" : " -T " + accessPoint + "\'"));
 
   for (const QString &item : options)
   {
@@ -226,95 +357,20 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
       file.close();
     }
   }
+
+  _condition.wakeAll();
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-ModemConnectionManager::~ModemConnectionManager()
+void ModemConnectionManager::_preDestroyOwner()
 {
   PF();
-  disconnection();
+  _connectionHope = 0;
+  _disconnection();
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-bool ModemConnectionManager::connection()
-{
-  PF();
-  disconnection();
-
-  // Pppd setup and connection
-  _reconnectionTimer.reset(new QTimer());
-  _pppd.reset(new QProcess());
-  if (!_pppd || !_reconnectionTimer)
-  {
-    _pppd.reset();
-    _reconnectionTimer.reset();
-    W("Cannot create pppd process");
-    return false;
-  }
-
-  _reconnectionTimer->setSingleShot(true);
-  _reconnectionTimer->setInterval(_reconnectTimeout * 1000);
-  connect(_reconnectionTimer.data(), &QTimer::timeout, this, &ModemConnectionManager::connection);
-
-  _pppd->setProcessChannelMode(QProcess::MergedChannels);
-  connect(_pppd.data(), &QProcess::readyReadStandardOutput, this, &ModemConnectionManager::pppdOutput);
-  connect(_pppd.data(), &QProcess::readyReadStandardError, this, &ModemConnectionManager::pppdError);
-  connect(_pppd.data(), QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
-          &ModemConnectionManager::pppdFinished);
-  _pppd->start("/usr/sbin/pppd", _pppdArguments);
-  bool isStarted = _pppd->waitForStarted(5000);
-  const int pid = (isStarted ? _pppd->processId() : -1);
-  if (pid != _state.internet.PID)
-  {
-    _state.internet.PID = pid;
-    emit stateChanged(_state);
-  }
-  return isStarted;
-}
-
-/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-void ModemConnectionManager::disconnection()
-{
-  PF();
-  if (_reconnectionTimer)
-  {
-    if (_reconnectionTimer->isActive())
-      _reconnectionTimer->stop();
-    _reconnectionTimer.reset();
-  }
-  if (_pppd)
-  {
-    if (QProcess::NotRunning != _pppd->state())
-    {
-      _pppd->terminate();
-      _pppd->waitForFinished(-1);
-    }
-    _pppd.reset();
-  }
-
-  D((int)_state.network.Registration << (int)_state.network.GPRS);
-  clearState(_state, false);
-  emit stateChanged(_state);
-}
-
-bool ModemConnectionManager::modemHardReset()
-{
-  PF();
-  disconnection();
-  QProcess process;
-  process.start("bash", {_modemResetCommand});
-  bool isOk = process.waitForStarted(5000);
-  if (isOk)
-  {
-    clearState(_state, true);
-    emit stateChanged(_state);
-    isOk = process.waitForFinished(-1);
-  }
-  return isOk;
-}
-
-/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-void ModemConnectionManager::pppdOutput()
+void ModemConnectionManager::_pppdOutput()
 {
   PF();
 
@@ -381,7 +437,7 @@ void ModemConnectionManager::pppdOutput()
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-void ModemConnectionManager::pppdError()
+void ModemConnectionManager::_pppdError()
 {
   PF();
   QByteArray data = _pppd->readAllStandardError().simplified();
@@ -391,7 +447,7 @@ void ModemConnectionManager::pppdError()
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-void ModemConnectionManager::pppdFinished(int exitCode, int exitStatus)
+void ModemConnectionManager::_pppdFinished(int exitCode, int exitStatus)
 {
   const QProcess::ExitStatus status = QProcess::ExitStatus(exitStatus);
 
@@ -401,6 +457,8 @@ void ModemConnectionManager::pppdFinished(int exitCode, int exitStatus)
   DF(status << exitCode);
   if (_reconnectionTimer && _pppd)
   {
+    if (_resetConnectionHopes && _resetConnectionHopes < _connectionHope)
+      modemHardReset();
     D("Try reconnect after: " << _reconnectionTimer->interval() / 1000 << "secs");
     _reconnectionTimer->start();
   }

@@ -58,18 +58,19 @@ int main(int argc, char *argv[])
   QCoreApplication a(argc, argv);
 
   // Read configuration
-  ModemConnectionManager mcm;
-  QObject::connect(&mcm, &ModemConnectionManager::stateChanged, &debugState);
-  mcm.connection();
+  QObject::connect(&ModemConnectionManager::instance(), &ModemConnectionManager::stateChanged, &debugState);
+  ModemConnectionManager::instance().connection();
 
   QTimer test;
   test.setInterval(30000);
   test.setSingleShot(true);
-  QObject::connect(&test, &QTimer::timeout, [&mcm]() {
+  QObject::connect(&test, &QTimer::timeout, []() {
+    D("### Disconnection ###");
+    ModemConnectionManager::instance().disconnection();
     D("### Hard reset modem ###");
-    D(mcm.modemHardReset());
+    ModemConnectionManager::instance().modemHardReset();
     D("### Connection ###");
-    mcm.connection();
+    ModemConnectionManager::instance().connection();
   });
   test.start();
 

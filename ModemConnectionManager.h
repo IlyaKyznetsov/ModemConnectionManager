@@ -1,16 +1,20 @@
 #ifndef MODEMCONNECTIONMANAGER_H
 #define MODEMCONNECTIONMANAGER_H
 
+#include <QMutex>
 #include <QObject>
 #include <QProcess>
+#include <QSettings>
 #include <QSharedPointer>
+#include <QThread>
 #include <QTimer>
+#include <QWaitCondition>
 
 class ModemConnectionManager : public QObject
 {
   Q_OBJECT
-  Q_DISABLE_COPY(ModemConnectionManager)
 public:
+  static ModemConnectionManager &instance(const QString &path = QString());
   struct State
   {
     struct Modem
@@ -65,21 +69,38 @@ public:
   ~ModemConnectionManager();
 
 public Q_SLOTS:
-  bool connection();
+  void connection();
   void disconnection();
-  bool modemHardReset();
+  void modemHardReset();
 
 Q_SIGNALS:
   void stateChanged(const State state);
 
 private Q_SLOTS:
-  void pppdOutput();
-  void pppdError();
-  void pppdFinished(int exitCode, int exitStatus);
+  void _postConstructOwner();
+  void _preDestroyOwner();
+  void _pppdOutput();
+  void _pppdError();
+  void _pppdFinished(int exitCode, int exitStatus);
+  bool _connection();
+  void _disconnection();
+  bool _modemHardReset();
 
 private:
+  ModemConnectionManager() = delete;
+  ModemConnectionManager(const ModemConnectionManager &) = delete;
+  ModemConnectionManager(ModemConnectionManager &&) = delete;
+  ModemConnectionManager &operator=(const ModemConnectionManager &) = delete;
+  ModemConnectionManager &operator=(ModemConnectionManager &&) = delete;
+
+  const QString _configurationPath;
+  QThread _thread;
+  QMutex _mutex;
+  QWaitCondition _condition;
   QByteArray _modemResetCommand;
-  int _reconnectTimeout = 20;
+  int _reconnectTimeout;
+  int _resetConnectionHopes;
+  int _connectionHope;
   QSharedPointer<QTimer> _reconnectionTimer;
   QSharedPointer<QProcess> _pppd;
   QStringList _pppdArguments;
