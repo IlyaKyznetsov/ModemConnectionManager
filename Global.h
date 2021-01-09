@@ -23,13 +23,13 @@ void messageOutput(QtMsgType type, const QMessageLogContext &context, const QStr
 
 namespace global
 {
-class Exception
+class Exception : public QException
 {
 public:
   explicit Exception(const QString &msg)
   {
     qCritical() << "Exception:" << msg;
-    throw std::exception();
+    //    throw std::exception();
   }
 };
 } // namespace global

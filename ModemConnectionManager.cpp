@@ -1,12 +1,39 @@
 #include "ModemConnectionManager.h"
 
+#include <signal.h>
+
 #include <QByteArray>
+#include <QDir>
 #include <QFile>
 #include <QIODevice>
 #include <QRegularExpression>
 #include <QSettings>
 
 #include "Global.h"
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+static bool pkill(const QString &name, const int signo)
+{
+  DF(name << QString::number(signo));
+  const QString shortName = name.left(15);
+  const QStringList procs = QDir("/proc").entryList({}, QDir::Dirs).filter(QRegularExpression("^[0-9]+$"));
+  bool isOk = false;
+  for (const QString &item : procs)
+  {
+    QFile comm("/proc/" + item + "/comm");
+    bool isPid;
+    pid_t pid = item.toInt(&isPid);
+    if (comm.exists() && isPid)
+    {
+      comm.open(QIODevice::ReadOnly);
+      QString processName = comm.readAll().simplified();
+      comm.close();
+      if (processName == shortName)
+        isOk = (0 == kill(pid, signo));
+    }
+  }
+  return isOk;
+}
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 static bool readSettings(QIODevice &device, QSettings::SettingsMap &map)
@@ -198,7 +225,7 @@ bool ModemConnectionManager::_modemHardReset()
 {
   PF();
   QProcess process;
-  process.start(_modemResetCommand);
+  process.start(_modemResetCommand, QStringList());
   bool isOk = process.waitForStarted(5000);
   if (isOk)
   {
@@ -214,6 +241,7 @@ void ModemConnectionManager::_postConstructOwner()
 {
   PF();
   disconnect(&_thread, &QThread::started, this, &ModemConnectionManager::_postConstructOwner);
+  pkill("pppd", SIGTERM);
   // Read configuration
   QSettings::Format format = QSettings::registerFormat("ModemConnectionManager", readSettings, nullptr);
   const QString rpath =
@@ -226,10 +254,10 @@ void ModemConnectionManager::_postConstructOwner()
   const QByteArray modem = settings.value("Modem").toByteArray();
   D(modem);
   if (modem.isEmpty())
-    global::Exception("[Modem Configuration] Modem not exist");
+    throw global::Exception("[Modem Configuration] Modem not exist");
   const QByteArray baud = settings.value("Baud").toByteArray();
   if (baud.isEmpty())
-    global::Exception("[Modem Configuration] Baud not exist");
+    throw global::Exception("[Modem Configuration] Baud not exist");
   _modemResetCommand = settings.value("Reset").toByteArray();
   if (_modemResetCommand.isEmpty())
   {
@@ -259,7 +287,7 @@ void ModemConnectionManager::_postConstructOwner()
   _reconnectTimeout = settings.value("ReconnectTimeout", 0).toInt();
   const QByteArray phone = settings.value("Phone").toByteArray();
   if (phone.isEmpty())
-    global::Exception("[Connection Settings] Phone not exist");
+    throw global::Exception("[Connection Settings] Phone not exist");
   const QByteArray user = settings.value("User").toByteArray();
   const QByteArray password = settings.value("Password").toByteArray();
   const QByteArray accessPoint = settings.value("AccessPoint").toByteArray();
@@ -271,7 +299,7 @@ void ModemConnectionManager::_postConstructOwner()
   const QByteArray chatPath = "/tmp/ModemConnection.chat";
   QFile file(chatPath);
   if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
-    global::Exception("Cannot create chat");
+    throw global::Exception("Cannot create chat");
 
   data.append("ECHO OFF");
   data.append("ABORT \'NO CARRIER\'");
@@ -330,7 +358,7 @@ void ModemConnectionManager::_postConstructOwner()
   file.setFileName("/etc/ppp/peers/ModemConnection");
   _pppdArguments.append({"call", "ModemConnection"});
   if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
-    global::Exception("Cannot create peer");
+    throw global::Exception("Cannot create peer");
   // -rwxr-xr-x
   file.setPermissions(QFileDevice::ReadUser | QFileDevice::WriteUser | QFileDevice::ExeUser | QFileDevice::ReadGroup |
                       QFileDevice::ExeGroup | QFileDevice::ExeOther);
