@@ -21,6 +21,8 @@
 
 void messageOutput(QtMsgType type, const QMessageLogContext &context, const QString &msg);
 
+QList<pid_t> pids(const QString &name);
+
 namespace global
 {
 class Exception : public QException

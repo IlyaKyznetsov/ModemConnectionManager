@@ -56,6 +56,13 @@ void debugState(const ModemConnectionManager::State &state)
 int main(int argc, char *argv[])
 {
   QCoreApplication a(argc, argv);
+  auto appPids = pids(QCoreApplication::applicationName());
+  appPids.removeAll(QCoreApplication::applicationPid());
+  if (!appPids.isEmpty())
+  {
+    C(QCoreApplication::applicationName() << "already started pid:" << appPids);
+    return 1;
+  }
 
   // Read configuration
   QObject::connect(&ModemConnectionManager::instance(), &ModemConnectionManager::stateChanged, &debugState);

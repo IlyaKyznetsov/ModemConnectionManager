@@ -27,3 +27,29 @@ QString toString(const bool x)
 {
   return (x ? "true" : "false");
 }
+
+#include <QDir>
+#include <QRegularExpression>
+
+QList<pid_t> pids(const QString &name)
+{
+  DF(name);
+  QList<pid_t> res;
+  const QString shortName = name.left(15);
+  const QStringList procs = QDir("/proc").entryList({}, QDir::Dirs).filter(QRegularExpression("^[0-9]+$"));
+  for (const QString &item : procs)
+  {
+    QFile comm("/proc/" + item + "/comm");
+    bool isPid;
+    pid_t pid = item.toInt(&isPid);
+    if (comm.exists() && isPid)
+    {
+      comm.open(QIODevice::ReadOnly);
+      QString processName = comm.readAll().simplified();
+      comm.close();
+      if (processName == shortName)
+        res.append(pid);
+    }
+  }
+  return res;
+}

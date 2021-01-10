@@ -481,12 +481,59 @@ void ModemConnectionManager::_pppdError()
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 void ModemConnectionManager::_pppdFinished(int exitCode, int exitStatus)
 {
-  const QProcess::ExitStatus status = QProcess::ExitStatus(exitStatus);
+  Q_UNUSED(exitStatus);
+  //  const QProcess::ExitStatus status = QProcess::ExitStatus(exitStatus);
+  QString message;
+  switch (exitCode)
+  {
+
+    case 0:
+      message = "Pppd has detached, or otherwise the connection was successfully established and terminated at the "
+                "peer's request.";
+      break;
+    case 1:
+      message = "An immediately fatal error of some kind occurred, such as an essential system call failing, or "
+                "running out of virtual memory.";
+      break;
+    case 2:
+      message =
+          "An error was detected in processing the options given, such as two mutually exclusive options being used.";
+      break;
+    case 3: message = "Pppd is not setuid-root and the invoking user is not root."; break;
+    case 4:
+      message =
+          "The kernel does not support PPP, for example, the PPP kernel driver is not included or cannot be loaded.";
+      break;
+    case 5: message = "Pppd terminated because it was sent a SIGINT, SIGTERM or SIGHUP signal."; break;
+    case 6: message = "The serial port could not be locked."; break;
+    case 7: message = "The serial port could not be opened."; break;
+    case 8: message = "The connect script failed (returned a non-zero exit status)."; break;
+    case 9: message = "The command specified as the argument to the pty option could not be run."; break;
+    case 10:
+      message = "The PPP negotiation failed, that is, it didn't reach the point where at least one network protocol "
+                "(e.g. IP) was running.";
+      break;
+    case 11: message = "The peer system failed (or refused) to authenticate itself."; break;
+    case 12: message = "The link was established successfully and terminated because it was idle."; break;
+    case 13:
+      message = "The link was established successfully and terminated because the connect time limit was reached.";
+      break;
+    case 14: message = "Callback was negotiated and an incoming call should arrive shortly."; break;
+    case 15: message = "The link was terminated because the peer is not responding to echo requests."; break;
+    case 16: message = "The link was terminated by the modem hanging up."; break;
+    case 17: message = "The PPP negotiation failed because serial loopback was detected."; break;
+    case 18: message = "The init script failed (returned a non-zero exit status)."; break;
+    case 19: message = "We failed to authenticate ourselves to the peer."; break;
+    default: break;
+  }
+
+  //  if (6 == exitCode)
+  //    modemHardReset();
 
   clearState(_state, false);
   emit stateChanged(_state);
 
-  DF(status << exitCode);
+  DF(exitCode << message);
   if (_reconnectionTimer && _pppd)
   {
     D("Try reconnect after: " << _reconnectionTimer->interval() / 1000 << "secs");
