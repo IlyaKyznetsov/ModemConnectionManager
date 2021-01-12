@@ -433,6 +433,9 @@ void ModemConnectionManager::disconnection()
 bool ModemConnectionManager::modemHardReset()
 {
   PF();
+  if (_connectionHopes)
+    _reconnectionHope = _connectionHopes;
+
   QProcess process;
   process.start(_modemResetCommand, QStringList());
   bool isOk = process.waitForStarted(5000);
