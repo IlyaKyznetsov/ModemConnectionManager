@@ -403,8 +403,9 @@ bool ModemConnectionManager::connection()
       modemHardReset();
     else
       --_reconnectionHope;
+
+    D("ConnectionHope:" << _reconnectionHope);
   }
-  D("ConnectionHope:" << _reconnectionHope);
   return isStarted;
 }
 
