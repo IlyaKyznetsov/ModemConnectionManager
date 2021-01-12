@@ -1,20 +1,17 @@
 #ifndef MODEMCONNECTIONMANAGER_H
 #define MODEMCONNECTIONMANAGER_H
 
-#include <QMutex>
+#include <ModemConnectionManager_global.h>
 #include <QObject>
-#include <QProcess>
-#include <QSettings>
-#include <QSharedPointer>
-#include <QThread>
-#include <QTimer>
-#include <QWaitCondition>
 
-class ModemConnectionManager : public QObject
+class QProcess;
+class QTimer;
+class QThread;
+
+class MODEMCONNECTIONMANAGER_EXPORT ModemConnectionManager : public QObject
 {
   Q_OBJECT
 public:
-  static ModemConnectionManager &instance(const QString &path = QString());
   struct State
   {
     struct Modem
@@ -63,49 +60,40 @@ public:
       QString SecondaryDNS;
     } internet;
   };
-  State state() const;
+  ModemConnectionManager::State state() const;
 
   explicit ModemConnectionManager(const QString &path = QString(), QObject *parent = nullptr);
   ~ModemConnectionManager();
 
-public Q_SLOTS:
-  void connection();
-  void disconnection();
-  void modemHardReset();
-
 Q_SIGNALS:
-  void stateChanged(const State state);
+  void stateChanged(const ModemConnectionManager::State state);
+
+public Q_SLOTS:
+  bool connection();
+  void disconnection();
+  bool modemHardReset();
 
 private Q_SLOTS:
-  void _postConstructOwner();
-  void _preDestroyOwner();
   void _pppdOutput();
-  void _pppdError();
   void _pppdFinished(int exitCode, int exitStatus);
-  bool _connection();
-  void _disconnection();
-  bool _modemHardReset();
 
 private:
-  ModemConnectionManager() = delete;
   ModemConnectionManager(const ModemConnectionManager &) = delete;
   ModemConnectionManager(ModemConnectionManager &&) = delete;
   ModemConnectionManager &operator=(const ModemConnectionManager &) = delete;
   ModemConnectionManager &operator=(ModemConnectionManager &&) = delete;
 
-  const QString _configurationPath;
-  QThread _thread;
-  QMutex _mutex;
-  QWaitCondition _condition;
+  int _connectionHopes = 0;
+  int _reconnectionHope = 0;
+  QTimer *_reconnectionTimer = nullptr;
+  QProcess *_pppd = nullptr;
   QByteArray _modemResetCommand;
-  int _reconnectTimeout;
-  int _resetConnectionHopes;
-  int _reconnectionHope;
-  QSharedPointer<QTimer> _reconnectionTimer;
-  QSharedPointer<QProcess> _pppd;
-  QStringList _pppdArguments;
   State _state;
   bool SIM7600E_H(const QByteArray &data);
 };
+Q_DECLARE_METATYPE(ModemConnectionManager::State)
+QString toString(ModemConnectionManager::State::Network::registration status);
+QString toString(ModemConnectionManager::State::Network::gprs status);
+QStringList toStringList(const ModemConnectionManager::State &state);
 
 #endif // MODEMCONNECTIONMANAGER_H

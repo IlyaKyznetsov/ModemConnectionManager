@@ -1,0 +1,20 @@
+ttyUSB2
+115200
+connect 'chat -v -s -S -f /tmp/ModemConnection.chat -T beeline.ru'
+debug
+nodetach
+nocrtscts
+noauth
+defaultroute
+usepeerdns
+unit 0
+persist
+chap-interval 60
+nopcomp
+novjccomp
+nobsdcomp
+nodeflate
+noaccomp
+lcp-echo-interval 2
+lcp-echo-failure 3
+noipdefault

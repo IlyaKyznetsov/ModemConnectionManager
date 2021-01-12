@@ -1,38 +1,125 @@
 #include "ModemConnectionManager.h"
 
-#include <signal.h>
-
 #include <QByteArray>
 #include <QDir>
 #include <QFile>
 #include <QIODevice>
+#include <QProcess>
 #include <QRegularExpression>
 #include <QSettings>
+#include <QTimer>
+
+#include <signal.h>
 
 #include "Global.h"
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-static bool pkill(const QString &name, const int signo)
+static void pppdterm()
 {
-  DF(name << QString::number(signo));
-  const QString shortName = name.left(15);
   const QStringList procs = QDir("/proc").entryList({}, QDir::Dirs).filter(QRegularExpression("^[0-9]+$"));
-  bool isOk = false;
   for (const QString &item : procs)
   {
-    QFile comm("/proc/" + item + "/comm");
     bool isPid;
+    QFile comm("/proc/" + item + "/comm");
     pid_t pid = item.toInt(&isPid);
     if (comm.exists() && isPid)
     {
       comm.open(QIODevice::ReadOnly);
       QString processName = comm.readAll().simplified();
       comm.close();
-      if (processName == shortName)
-        isOk = (0 == kill(pid, signo));
+      if (processName == "pppd")
+        kill(pid, SIGTERM);
     }
   }
-  return isOk;
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+QString toString(ModemConnectionManager::State::Network::registration status)
+{
+  switch (status)
+  {
+    case ModemConnectionManager::State::Network::registration::NotRegistered: return "not registered";
+    case ModemConnectionManager::State::Network::registration::RegisteredHomeNetwork: return "registered, home network";
+    case ModemConnectionManager::State::Network::registration::Searching: return "not registered, searching";
+    case ModemConnectionManager::State::Network::registration::RegistrationDenied: return "registration denied";
+    case ModemConnectionManager::State::Network::registration::Unknown: return "unknown";
+    case ModemConnectionManager::State::Network::registration::RegisteredRoaming: return "registered, roaming";
+  }
+  return QString();
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+QString toString(ModemConnectionManager::State::Network::gprs status)
+{
+  switch (status)
+  {
+    case ModemConnectionManager::State::Network::gprs::NotRegistered: return "not registered";
+    case ModemConnectionManager::State::Network::gprs::RegisteredHomeNetwork: return "registered, home network";
+    case ModemConnectionManager::State::Network::gprs::Searching:
+      return "not registered, trying to attach or searching";
+    case ModemConnectionManager::State::Network::gprs::RegistrationDenied: return "registration denied";
+    case ModemConnectionManager::State::Network::gprs::Unknown: return "unknown";
+    case ModemConnectionManager::State::Network::gprs::RegisteredRoaming: return "registered, roaming";
+  }
+  return QString();
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+QStringList toStringList(const ModemConnectionManager::State &state)
+{
+  return {("Modem Manufacturer: " + state.modem.Manufacturer),
+          ("Modem Model: " + state.modem.Model),
+          ("Modem Revision: " + state.modem.Revision),
+          ("Modem IMEI: " + state.modem.IMEI),
+          ("SIM ICCID: " + state.sim.ICCID),
+          ("SIM Operator: " + state.sim.Operator),
+          ("Registration: " + toString(state.network.Registration)),
+          ("GPRS: " + toString(state.network.GPRS)),
+          ("Internet PID: " + QString::number(state.internet.PID)),
+          ("Internet Interface: " + state.internet.Interface),
+          ("Internet LocalAddress: " + state.internet.LocalAddress),
+          ("Internet RemoteAddress: " + state.internet.RemoteAddress),
+          ("Internet PrimaryDNS: " + state.internet.PrimaryDNS),
+          ("Internet SecondaryDNS: " + state.internet.SecondaryDNS)};
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+QString errorString(const int pppdCode)
+{
+  switch (pppdCode)
+  {
+
+    case 0:
+      return "Pppd has detached, or otherwise the connection was successfully established and terminated at the "
+             "peer's request.";
+    case 1:
+      return "An immediately fatal error of some kind occurred, such as an essential system call failing, or "
+             "running out of virtual memory.";
+    case 2:
+      return "An error was detected in processing the options given, such as two mutually exclusive options being "
+             "used.";
+    case 3: return "Pppd is not setuid-root and the invoking user is not root.";
+    case 4:
+      return "The kernel does not support PPP, for example, the PPP kernel driver is not included or cannot be loaded.";
+    case 5: return "Pppd terminated because it was sent a SIGINT, SIGTERM or SIGHUP signal.";
+    case 6: return "The serial port could not be locked.";
+    case 7: return "The serial port could not be opened.";
+    case 8: return "The connect script failed (returned a non-zero exit status).";
+    case 9: return "The command specified as the argument to the pty option could not be run.";
+    case 10:
+      return "The PPP negotiation failed, that is, it didn't reach the point where at least one network protocol "
+             "(e.g. IP) was running.";
+    case 11: return "The peer system failed (or refused) to authenticate itself.";
+    case 12: return "The link was established successfully and terminated because it was idle.";
+    case 13: return "The link was established successfully and terminated because the connect time limit was reached.";
+    case 14: return "Callback was negotiated and an incoming call should arrive shortly.";
+    case 15: return "The link was terminated because the peer is not responding to echo requests.";
+    case 16: return "The link was terminated by the modem hanging up.";
+    case 17: return "The PPP negotiation failed because serial loopback was detected.";
+    case 18: return "The init script failed (returned a non-zero exit status).";
+    case 19: return "We failed to authenticate ourselves to the peer.";
+  }
+  return "Unknown error";
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
@@ -98,155 +185,22 @@ inline void clearState(ModemConnectionManager::State &state, bool all)
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-ModemConnectionManager &ModemConnectionManager::instance(const QString &path)
-{
-  static ModemConnectionManager obj(path);
-  return obj;
-}
-
-/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 ModemConnectionManager::State ModemConnectionManager::state() const
 {
   return _state;
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *parent)
-    : QObject(parent), _configurationPath(path)
+ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *parent) : QObject(parent)
 {
-  _mutex.lock();
-  connect(&_thread, &QThread::started, this, &ModemConnectionManager::_postConstructOwner, Qt::QueuedConnection);
-  connect(&_thread, &QThread::finished, this, &ModemConnectionManager::_preDestroyOwner, Qt::QueuedConnection);
-  moveToThread(&_thread);
-  _thread.start();
-  DF("--- wait for started");
-  _condition.wait(&_mutex);
-  _mutex.unlock();
-  DF("--- started");
-}
+  DF(path);
+  qRegisterMetaType<ModemConnectionManager::State>("ModemConnectionManager::State");
 
-/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-ModemConnectionManager::~ModemConnectionManager()
-{
-  PF();
-  _thread.quit();
-  _thread.wait();
-}
+  pppdterm();
 
-void ModemConnectionManager::connection()
-{
-  QMetaObject::invokeMethod(this, "_connection", Qt::QueuedConnection);
-}
-
-/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-void ModemConnectionManager::disconnection()
-{
-  _reconnectionHope = _resetConnectionHopes;
-  QMetaObject::invokeMethod(this, "_disconnection", Qt::QueuedConnection);
-}
-
-/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-void ModemConnectionManager::modemHardReset()
-{
-  _reconnectionHope = _resetConnectionHopes;
-  QMetaObject::invokeMethod(this, "_modemHardReset", Qt::QueuedConnection);
-}
-
-/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-bool ModemConnectionManager::_connection()
-{
-  PF();
-  _disconnection();
-
-  // Pppd setup and connection
-  _reconnectionTimer.reset(new QTimer());
-  _pppd.reset(new QProcess());
-  if (!_pppd || !_reconnectionTimer)
-  {
-    _pppd.reset();
-    _reconnectionTimer.reset();
-    W("Cannot create pppd process");
-    return false;
-  }
-
-  _reconnectionTimer->setSingleShot(true);
-  _reconnectionTimer->setInterval(_reconnectTimeout * 1000);
-  connect(_reconnectionTimer.data(), &QTimer::timeout, this, &ModemConnectionManager::connection);
-
-  _pppd->setProcessChannelMode(QProcess::MergedChannels);
-  connect(_pppd.data(), &QProcess::readyReadStandardOutput, this, &ModemConnectionManager::_pppdOutput);
-  connect(_pppd.data(), &QProcess::readyReadStandardError, this, &ModemConnectionManager::_pppdError);
-  connect(_pppd.data(), QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
-          &ModemConnectionManager::_pppdFinished);
-  _pppd->start("/usr/sbin/pppd", _pppdArguments);
-  bool isStarted = _pppd->waitForStarted(5000);
-  const int pid = (isStarted ? _pppd->processId() : -1);
-  if (pid != _state.internet.PID)
-  {
-    _state.internet.PID = pid;
-    emit stateChanged(_state);
-  }
-  if (_resetConnectionHopes)
-  {
-    if (!_reconnectionHope)
-      modemHardReset();
-    else
-      --_reconnectionHope;
-  }
-  D("ConnectionHope:" << _reconnectionHope);
-  return isStarted;
-}
-
-/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-void ModemConnectionManager::_disconnection()
-{
-  PF();
-  if (_reconnectionTimer)
-  {
-    if (_reconnectionTimer->isActive())
-      _reconnectionTimer->stop();
-    _reconnectionTimer.reset();
-  }
-  if (_pppd)
-  {
-    if (QProcess::NotRunning != _pppd->state())
-    {
-      _pppd->terminate();
-      _pppd->waitForFinished(-1);
-    }
-    _pppd.reset();
-  }
-
-  clearState(_state, false);
-  emit stateChanged(_state);
-}
-
-bool ModemConnectionManager::_modemHardReset()
-{
-  PF();
-  QProcess process;
-  process.start(_modemResetCommand, QStringList());
-  bool isOk = process.waitForStarted(5000);
-  if (isOk)
-  {
-    clearState(_state, true);
-    emit stateChanged(_state);
-    isOk = process.waitForFinished(-1);
-  }
-  return isOk;
-}
-
-/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-void ModemConnectionManager::_postConstructOwner()
-{
-  PF();
-  disconnect(&_thread, &QThread::started, this, &ModemConnectionManager::_postConstructOwner);
-  pkill("pppd", SIGTERM);
   // Read configuration
   QSettings::Format format = QSettings::registerFormat("ModemConnectionManager", readSettings, nullptr);
-  const QString rpath =
-      (!_configurationPath.isEmpty() && QFile::exists(_configurationPath) ? _configurationPath
-                                                                          : "://ModemConnectionManager.conf");
+  const QString rpath = (!path.isEmpty() && QFile::exists(path) ? path : "://ModemConnectionManager.conf");
   QSettings settings(rpath, format, this);
   // settings.setIniCodec("UTF-8");
 
@@ -283,8 +237,8 @@ void ModemConnectionManager::_postConstructOwner()
   D(chat);
   settings.endGroup();
   settings.beginGroup("Connection Settings");
-  _reconnectionHope = _resetConnectionHopes = settings.value("ResetConnectionHopes", 0).toInt();
-  _reconnectTimeout = settings.value("ReconnectTimeout", 0).toInt();
+  _reconnectionHope = _connectionHopes = settings.value("ResetConnectionHopes", 0).toInt();
+  const int reconnectionTimeout = settings.value("ReconnectTimeout", 0).toInt();
   const QByteArray phone = settings.value("Phone").toByteArray();
   if (phone.isEmpty())
     throw global::Exception("[Connection Settings] Phone not exist");
@@ -356,7 +310,7 @@ void ModemConnectionManager::_postConstructOwner()
 
   // Create peer configuration:
   file.setFileName("/etc/ppp/peers/ModemConnection");
-  _pppdArguments.append({"call", "ModemConnection"});
+  QStringList pppdArguments{"call", "ModemConnection"};
   if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
     throw global::Exception("Cannot create peer");
   // -rwxr-xr-x
@@ -378,7 +332,7 @@ void ModemConnectionManager::_postConstructOwner()
 
   if (!user.isEmpty() && !password.isEmpty())
   {
-    _pppdArguments.append({"user", user});
+    pppdArguments.append({"user", user});
     for (int i = 0; i != count; ++i)
     {
       file.setFileName(files[i]);
@@ -390,15 +344,105 @@ void ModemConnectionManager::_postConstructOwner()
     }
   }
 
-  _condition.wakeAll();
+  if (_connectionHopes > 0 && reconnectionTimeout > 0)
+  {
+    _reconnectionTimer = new QTimer(this);
+    if (!_reconnectionTimer)
+      throw global::Exception("Cannot create reconnection timer");
+    _reconnectionTimer->setSingleShot(true);
+    _reconnectionTimer->setInterval(reconnectionTimeout * 1000);
+    connect(_reconnectionTimer, &QTimer::timeout, this, &ModemConnectionManager::connection);
+  }
+
+  _pppd = new QProcess(this);
+  if (!_pppd)
+    throw global::Exception("Cannot create pppd");
+  _pppd->setProcessChannelMode(QProcess::MergedChannels);
+  connect(_pppd, &QProcess::readyReadStandardOutput, this, &ModemConnectionManager::_pppdOutput);
+  connect(_pppd, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
+          &ModemConnectionManager::_pppdFinished);
+  _pppd->setProgram("/usr/sbin/pppd");
+  _pppd->setArguments(pppdArguments);
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-void ModemConnectionManager::_preDestroyOwner()
+ModemConnectionManager::~ModemConnectionManager()
 {
   PF();
-  _reconnectionHope = _resetConnectionHopes;
-  _disconnection();
+  if (_reconnectionTimer)
+  {
+    _reconnectionTimer->disconnect(this);
+    if (_reconnectionTimer->isActive())
+      _reconnectionTimer->stop();
+  }
+  if (_pppd)
+  {
+    _pppd->disconnect(this);
+    _pppd->terminate();
+    if (!_pppd->waitForFinished(5000))
+      _pppd->kill();
+  }
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+bool ModemConnectionManager::connection()
+{
+  PF();
+  disconnection();
+  _pppd->start();
+  bool isStarted = _pppd->waitForStarted(5000);
+  const int pid = (isStarted ? _pppd->processId() : -1);
+  if (pid != _state.internet.PID)
+  {
+    _state.internet.PID = pid;
+    emit stateChanged(_state);
+  }
+  if (_connectionHopes)
+  {
+    if (!_reconnectionHope)
+      modemHardReset();
+    else
+      --_reconnectionHope;
+  }
+  D("ConnectionHope:" << _reconnectionHope);
+  return isStarted;
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+void ModemConnectionManager::disconnection()
+{
+  PF();
+
+  if (_reconnectionTimer && _reconnectionTimer->isActive())
+    _reconnectionTimer->stop();
+
+  if (QProcess::NotRunning != _pppd->state())
+  {
+    _pppd->terminate();
+    if (!_pppd->waitForFinished(5000))
+    {
+      _pppd->kill();
+      _pppd->waitForFinished(-1);
+    }
+  }
+
+  clearState(_state, false);
+  emit stateChanged(_state);
+}
+
+bool ModemConnectionManager::modemHardReset()
+{
+  PF();
+  QProcess process;
+  process.start(_modemResetCommand, QStringList());
+  bool isOk = process.waitForStarted(5000);
+  if (isOk)
+  {
+    clearState(_state, true);
+    emit stateChanged(_state);
+    isOk = process.waitForFinished();
+  }
+  return isOk;
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
@@ -469,71 +513,17 @@ void ModemConnectionManager::_pppdOutput()
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-void ModemConnectionManager::_pppdError()
-{
-  PF();
-  QByteArray data = _pppd->readAllStandardError().simplified();
-  if (data.isEmpty())
-    return;
-  D("Error:" << data);
-}
-
-/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 void ModemConnectionManager::_pppdFinished(int exitCode, int exitStatus)
 {
   Q_UNUSED(exitStatus);
   //  const QProcess::ExitStatus status = QProcess::ExitStatus(exitStatus);
-  QString message;
-  switch (exitCode)
-  {
-
-    case 0:
-      message = "Pppd has detached, or otherwise the connection was successfully established and terminated at the "
-                "peer's request.";
-      break;
-    case 1:
-      message = "An immediately fatal error of some kind occurred, such as an essential system call failing, or "
-                "running out of virtual memory.";
-      break;
-    case 2:
-      message =
-          "An error was detected in processing the options given, such as two mutually exclusive options being used.";
-      break;
-    case 3: message = "Pppd is not setuid-root and the invoking user is not root."; break;
-    case 4:
-      message =
-          "The kernel does not support PPP, for example, the PPP kernel driver is not included or cannot be loaded.";
-      break;
-    case 5: message = "Pppd terminated because it was sent a SIGINT, SIGTERM or SIGHUP signal."; break;
-    case 6: message = "The serial port could not be locked."; break;
-    case 7: message = "The serial port could not be opened."; break;
-    case 8: message = "The connect script failed (returned a non-zero exit status)."; break;
-    case 9: message = "The command specified as the argument to the pty option could not be run."; break;
-    case 10:
-      message = "The PPP negotiation failed, that is, it didn't reach the point where at least one network protocol "
-                "(e.g. IP) was running.";
-      break;
-    case 11: message = "The peer system failed (or refused) to authenticate itself."; break;
-    case 12: message = "The link was established successfully and terminated because it was idle."; break;
-    case 13:
-      message = "The link was established successfully and terminated because the connect time limit was reached.";
-      break;
-    case 14: message = "Callback was negotiated and an incoming call should arrive shortly."; break;
-    case 15: message = "The link was terminated because the peer is not responding to echo requests."; break;
-    case 16: message = "The link was terminated by the modem hanging up."; break;
-    case 17: message = "The PPP negotiation failed because serial loopback was detected."; break;
-    case 18: message = "The init script failed (returned a non-zero exit status)."; break;
-    case 19: message = "We failed to authenticate ourselves to the peer."; break;
-    default: break;
-  }
-
   //  if (6 == exitCode)
   //    modemHardReset();
 
   clearState(_state, false);
   emit stateChanged(_state);
 
-  DF(exitCode << message);
+  DF(exitCode << errorString(exitCode));
   if (_reconnectionTimer && _pppd)
   {
     D("Try reconnect after: " << _reconnectionTimer->interval() / 1000 << "secs");

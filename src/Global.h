@@ -9,7 +9,8 @@
 #define GLOBAL_DEBUG_PREFIX QTime::currentTime().toString("mm:ss.zzz") << QThread::currentThreadId()
 
 #ifdef QT_DEBUG
-#define D(x) qInfo() << "D DEBUG:" << GLOBAL_DEBUG_PREFIX << x
+#define D(x) qInfo() << "D DEBUG:" << GLOBAL_DEBUG_PREFIX << __FILE__ << __LINE__ << x
+//#define D(x) qInfo() << "D DEBUG:" << GLOBAL_DEBUG_PREFIX << x
 #else
 #define D(x)
 #endif
