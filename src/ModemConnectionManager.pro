@@ -26,8 +26,7 @@ CONFIG += c++11
 SOURCES += \
         Global.cpp \
         ModemConnectionAutomator.cpp \
-        ModemConnectionManager.cpp \
-        main.cpp
+        ModemConnectionManager.cpp
 
 HEADERS += \
     Global.h \
