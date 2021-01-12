@@ -375,13 +375,11 @@ ModemConnectionManager::~ModemConnectionManager()
     if (_reconnectionTimer->isActive())
       _reconnectionTimer->stop();
   }
-  if (_pppd)
-  {
-    _pppd->disconnect(this);
-    _pppd->terminate();
-    if (!_pppd->waitForFinished(5000))
-      _pppd->kill();
-  }
+
+  _pppd->disconnect(this);
+  _pppd->terminate();
+  if (!_pppd->waitForFinished())
+    _pppd->kill();
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
@@ -389,6 +387,8 @@ bool ModemConnectionManager::connection()
 {
   PF();
   disconnection();
+  if (_reconnectionTimer && _pppd->signalsBlocked())
+    _pppd->blockSignals(false);
   _pppd->start();
   bool isStarted = _pppd->waitForStarted(5000);
   const int pid = (isStarted ? _pppd->processId() : -1);
@@ -414,17 +414,20 @@ void ModemConnectionManager::disconnection()
 {
   PF();
 
-  if (_reconnectionTimer && _reconnectionTimer->isActive())
-    _reconnectionTimer->stop();
+  if (_reconnectionTimer)
+  {
+    if (!_pppd->signalsBlocked())
+      _pppd->blockSignals(true);
+
+    if (_reconnectionTimer->isActive())
+      _reconnectionTimer->stop();
+  }
 
   if (QProcess::NotRunning != _pppd->state())
   {
     _pppd->terminate();
-    if (!_pppd->waitForFinished(5000))
-    {
-      _pppd->kill();
-      _pppd->waitForFinished(-1);
-    }
+    if (!_pppd->waitForFinished())
+      throw global::Exception("Cannot terminate pppd");
   }
 
   clearState(_state, false);
