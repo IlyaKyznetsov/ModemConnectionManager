@@ -18,6 +18,7 @@ ModemConnectionAutomator::~ModemConnectionAutomator()
 {
   PF();
   _mcm->disconnection();
+  _mcm->deleteLater();
   _thread->quit();
   _thread->wait();
 }
