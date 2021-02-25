@@ -1,7 +1,8 @@
 QT -= gui
 
 ### Library ###
-TEMPLATE = app
+#TEMPLATE = app
+TEMPLATE = lib
 DEFINES += MODEMCONNECTIONMANAGER_LIBRARY
 # Default rules for deployment.
 unix {
@@ -26,8 +27,7 @@ CONFIG += c++11
 SOURCES += \
         Global.cpp \
         ModemConnectionAutomator.cpp \
-        ModemConnectionManager.cpp \
-        main.cpp
+        ModemConnectionManager.cpp
 
 HEADERS += \
     Global.h \
