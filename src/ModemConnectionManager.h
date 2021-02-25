@@ -87,9 +87,11 @@ private:
   int _reconnectionHope = 0;
   QTimer *_reconnectionTimer = nullptr;
   QProcess *_pppd = nullptr;
+  QByteArray _pppdCommand;
   QByteArray _modemResetCommand;
   State _state;
-  bool SIM7600E_H(const QByteArray &data);
+  QByteArray modemChatConfiguration_SIM7600E_H(const QByteArray &phone, const QString &accessPoint) const;
+  bool modemResponseParser_SIM7600E_H(const QByteArray &data);
 };
 Q_DECLARE_METATYPE(ModemConnectionManager::State)
 QString toString(ModemConnectionManager::State::Network::registration status);

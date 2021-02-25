@@ -153,15 +153,6 @@ static bool readSettings(QIODevice &device, QSettings::SettingsMap &map)
       value.append(line);
       map.insert(key, value);
     }
-    else if ("Modem Commands" == group)
-    {
-      const QString key = group + "/chat";
-      if (!map.contains(key))
-        map.insert(key, QStringList());
-      QStringList value = map.value(key).toStringList();
-      value.append(line);
-      map.insert(key, value);
-    }
   }
   return true;
 }
@@ -198,6 +189,9 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
 
   pppdterm();
 
+  _pppdCommand = "/usr/sbin/pppd";
+  auto pppdCommandAppend = [this](const QByteArray &data) { _pppdCommand += ' ' + data; };
+
   // Read configuration
   QSettings::Format format = QSettings::registerFormat("ModemConnectionManager", readSettings, nullptr);
   const QString rpath = (!path.isEmpty() && QFile::exists(path) ? path : "://ModemConnectionManager.conf");
@@ -209,9 +203,12 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
   D(modem);
   if (modem.isEmpty())
     throw global::Exception("[Modem Configuration] Modem not exist");
+  pppdCommandAppend(modem.mid(modem.lastIndexOf('/') + 1));
+
   const QByteArray baud = settings.value("Baud").toByteArray();
   if (baud.isEmpty())
     throw global::Exception("[Modem Configuration] Baud not exist");
+  pppdCommandAppend(baud);
   _modemResetCommand = settings.value("Reset").toByteArray();
   if (_modemResetCommand.isEmpty())
   {
@@ -230,11 +227,9 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
   }
   settings.endGroup();
   settings.beginGroup("Pppd Settings");
-  QStringList options = settings.value("options").toStringList();
-  settings.endGroup();
-  settings.beginGroup("Modem Commands");
-  const QStringList chat = settings.value("chat").toStringList();
-  D(chat);
+  const QStringList options = settings.value("options").toStringList();
+  for (const QString &item : options)
+    pppdCommandAppend(item.toLatin1());
   settings.endGroup();
   settings.beginGroup("Connection Settings");
   _reconnectionHope = _connectionHopes = settings.value("ResetConnectionHopes", 0).toInt();
@@ -246,85 +241,8 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
   const QByteArray password = settings.value("Password").toByteArray();
   const QByteArray accessPoint = settings.value("AccessPoint").toByteArray();
   settings.endGroup();
-
-  QList<QByteArray> data;
-
-  // Create chat configuration:
-  const QByteArray chatPath = "/tmp/ModemConnection.chat";
-  QFile file(chatPath);
-  if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
-    throw global::Exception("Cannot create chat");
-
-  data.append("ECHO OFF");
-  data.append("ABORT \'NO CARRIER\'");
-  data.append("ABORT \'NO DIALTONE\'");
-  data.append("ABORT \'ERROR\'");
-  data.append("ABORT \'NO ANSWER\'");
-  data.append("ABORT \'BUSY\'");
-  data.append("TIMEOUT 5");
-  for (const QString &item : chat)
-  {
-    QStringList group(item.split("' '"));
-    D(group);
-    int pos = -1;
-    QByteArray cmd;
-    QByteArray check;
-    QString rx;
-    for (QString elm : group)
-    {
-      ++pos;
-      auto size = elm.size();
-      if (0 == size)
-        continue;
-      if ('\'' == elm[size - 1])
-      {
-        elm.remove(size - 1, 1);
-        --size;
-        if (0 == size)
-          continue;
-      }
-      if ('\'' == elm[0])
-      {
-        elm.remove(0, 1);
-        --size;
-        if (0 == size)
-          continue;
-      }
-
-      switch (pos)
-      {
-        case 0: cmd = elm.toLatin1(); break;
-        case 1: check = elm.toLatin1(); break;
-        case 2: rx = elm; break;
-        default: throw global::Exception("Bad [Modem Commands] format");
-      }
-
-      if (!cmd.isEmpty() && !check.isEmpty())
-        data.append(check + " \'" + cmd + "\'");
-    }
-  }
-  data.append("OK \'ATD" + phone + "\'");
-  data.append("CONNECT \\c");
-  file.write(data.join('\n'));
-  file.close();
-
-  // Create peer configuration:
-  file.setFileName("/etc/ppp/peers/ModemConnection");
-  QStringList pppdArguments{"call", "ModemConnection"};
-  if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
-    throw global::Exception("Cannot create peer");
-  // -rwxr-xr-x
-  file.setPermissions(QFileDevice::ReadUser | QFileDevice::WriteUser | QFileDevice::ExeUser | QFileDevice::ReadGroup |
-                      QFileDevice::ExeGroup | QFileDevice::ExeOther);
-  data = {modem.mid(modem.lastIndexOf('/') + 1), baud};
-  data.append("connect \'chat -v -s -S -f " + chatPath + (accessPoint.isEmpty() ? "\'" : " -T " + accessPoint + "\'"));
-
-  for (const QString &item : options)
-  {
-    data.append(item.toLatin1());
-  }
-  file.write(data.join('\n'));
-  file.close();
+  pppdCommandAppend("connect");
+  pppdCommandAppend(modemChatConfiguration_SIM7600E_H(phone, accessPoint));
 
   // Create secrets:
   const int count = 2;
@@ -332,10 +250,11 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
 
   if (!user.isEmpty() && !password.isEmpty())
   {
-    pppdArguments.append({"user", user});
+    pppdCommandAppend("user");
+    pppdCommandAppend(user);
     for (int i = 0; i != count; ++i)
     {
-      file.setFileName(files[i]);
+      QFile file(files[i]);
       if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
         throw global::Exception("Cannot write secrets files");
       file.write(user + '\t' + '*' + '\t' + password);
@@ -361,8 +280,32 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
   connect(_pppd, &QProcess::readyReadStandardOutput, this, &ModemConnectionManager::_pppdOutput);
   connect(_pppd, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
           &ModemConnectionManager::_pppdFinished);
-  _pppd->setProgram("/usr/sbin/pppd");
-  _pppd->setArguments(pppdArguments);
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+QByteArray ModemConnectionManager::modemChatConfiguration_SIM7600E_H(const QByteArray &phone,
+                                                                     const QString &accessPoint) const
+{
+  QByteArray command = "\"";
+  command.append("/usr/sbin/chat -v -s -S");
+  if (!accessPoint.isEmpty())
+    command.append(" -T " + accessPoint);
+  command.append(" ABORT 'NO CARRIER'");
+  command.append(" ABORT 'NO DIALTONE'");
+  command.append(" ABORT ERROR");
+  command.append(" ABORT 'NO ANSWER'");
+  command.append(" ABORT BUSY");
+  command.append(" TIMEOUT 5");
+  command.append(" OK-AT-OK ATZ");
+  command.append(" OK-AT-OK ATI");
+  command.append(" OK-AT-OK AT+CICCID");
+  command.append(" OK-AT-OK AT+CSPN?");
+  command.append(" OK-AT-OK AT+CREG?");
+  command.append(" OK-AT-OK AT+CGREG?");
+  command.append(" OK ATD" + phone);
+  command.append(" CONNECT \\c");
+  command.append('\"');
+  return command;
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
@@ -385,11 +328,11 @@ ModemConnectionManager::~ModemConnectionManager()
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 bool ModemConnectionManager::connection()
 {
-  PF();
+  DF(_pppd->program());
   disconnection();
   if (_reconnectionTimer && _pppd->signalsBlocked())
     _pppd->blockSignals(false);
-  _pppd->start();
+  _pppd->start(_pppdCommand);
   bool isStarted = _pppd->waitForStarted(5000);
   const int pid = (isStarted ? _pppd->processId() : -1);
   if (pid != _state.internet.PID)
@@ -465,7 +408,7 @@ void ModemConnectionManager::_pppdOutput()
   D(data);
 
   // Parse AT Commands responses
-  bool isStateChanged = SIM7600E_H(data);
+  bool isStateChanged = modemResponseParser_SIM7600E_H(data);
 
   // Parse Pppd output
   QRegularExpression rx("Using interface (\\S+) ");
@@ -539,7 +482,7 @@ void ModemConnectionManager::_pppdFinished(int exitCode, int exitStatus)
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-bool ModemConnectionManager::SIM7600E_H(const QByteArray &data)
+bool ModemConnectionManager::modemResponseParser_SIM7600E_H(const QByteArray &data)
 {
   int index = data.indexOf(' ');
   if (-1 == index)
