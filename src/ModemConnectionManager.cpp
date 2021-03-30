@@ -8,6 +8,7 @@
 #include <QRegularExpression>
 #include <QSettings>
 #include <QTimer>
+#include <QtSerialPort/QSerialPort>
 
 #include <signal.h>
 
@@ -31,56 +32,6 @@ static void pppdterm()
         kill(pid, SIGTERM);
     }
   }
-}
-
-/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-QString toString(ModemConnectionManager::State::Network::registration status)
-{
-  switch (status)
-  {
-    case ModemConnectionManager::State::Network::registration::NotRegistered: return "not registered";
-    case ModemConnectionManager::State::Network::registration::RegisteredHomeNetwork: return "registered, home network";
-    case ModemConnectionManager::State::Network::registration::Searching: return "not registered, searching";
-    case ModemConnectionManager::State::Network::registration::RegistrationDenied: return "registration denied";
-    case ModemConnectionManager::State::Network::registration::Unknown: return "unknown";
-    case ModemConnectionManager::State::Network::registration::RegisteredRoaming: return "registered, roaming";
-  }
-  return QString();
-}
-
-/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-QString toString(ModemConnectionManager::State::Network::gprs status)
-{
-  switch (status)
-  {
-    case ModemConnectionManager::State::Network::gprs::NotRegistered: return "not registered";
-    case ModemConnectionManager::State::Network::gprs::RegisteredHomeNetwork: return "registered, home network";
-    case ModemConnectionManager::State::Network::gprs::Searching:
-      return "not registered, trying to attach or searching";
-    case ModemConnectionManager::State::Network::gprs::RegistrationDenied: return "registration denied";
-    case ModemConnectionManager::State::Network::gprs::Unknown: return "unknown";
-    case ModemConnectionManager::State::Network::gprs::RegisteredRoaming: return "registered, roaming";
-  }
-  return QString();
-}
-
-/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-QStringList toStringList(const ModemConnectionManager::State &state)
-{
-  return {("Modem Manufacturer: " + state.modem.Manufacturer),
-          ("Modem Model: " + state.modem.Model),
-          ("Modem Revision: " + state.modem.Revision),
-          ("Modem IMEI: " + state.modem.IMEI),
-          ("SIM ICCID: " + state.sim.ICCID),
-          ("SIM Operator: " + state.sim.Operator),
-          ("Registration: " + toString(state.network.Registration)),
-          ("GPRS: " + toString(state.network.GPRS)),
-          ("Internet PID: " + QString::number(state.internet.PID)),
-          ("Internet Interface: " + state.internet.Interface),
-          ("Internet LocalAddress: " + state.internet.LocalAddress),
-          ("Internet RemoteAddress: " + state.internet.RemoteAddress),
-          ("Internet PrimaryDNS: " + state.internet.PrimaryDNS),
-          ("Internet SecondaryDNS: " + state.internet.SecondaryDNS)};
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
@@ -157,35 +108,35 @@ static bool readSettings(QIODevice &device, QSettings::SettingsMap &map)
   return true;
 }
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-inline void clearState(ModemConnectionManager::State &state, bool all)
+inline void clearState(Modem::State &state, bool all)
 {
   state.internet.PID = 0;
-  if (state.network.Registration != ModemConnectionManager::State::Network::registration::NotRegistered)
-    state.network.Registration = ModemConnectionManager::State::Network::registration::Unknown;
-  if (state.network.GPRS != ModemConnectionManager::State::Network::gprs::NotRegistered)
-    state.network.GPRS = ModemConnectionManager::State::Network::gprs::Unknown;
+  if (state.network.Registration != Modem::State::Network::registration::NotRegistered)
+    state.network.Registration = Modem::State::Network::registration::Unknown;
+  if (state.network.GPRS != Modem::State::Network::gprs::NotRegistered)
+    state.network.GPRS = Modem::State::Network::gprs::Unknown;
   state.internet.Interface = state.internet.LocalAddress = state.internet.RemoteAddress = state.internet.PrimaryDNS =
       state.internet.SecondaryDNS = QString();
   if (all)
   {
-    state.network.Registration = ModemConnectionManager::State::Network::registration::NotRegistered;
-    state.network.GPRS = ModemConnectionManager::State::Network::gprs::NotRegistered;
+    state.network.Registration = Modem::State::Network::registration::NotRegistered;
+    state.network.GPRS = Modem::State::Network::gprs::NotRegistered;
     state.modem.Manufacturer = state.modem.Model = state.modem.Revision = state.modem.IMEI = state.sim.ICCID =
         state.sim.Operator = QString();
   }
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-ModemConnectionManager::State ModemConnectionManager::state() const
+Modem::State ModemConnectionManager::state() const
 {
-  return _state;
+  return _modem.state;
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *parent) : QObject(parent)
 {
   DF(path);
-  qRegisterMetaType<ModemConnectionManager::State>("ModemConnectionManager::State");
+  qRegisterMetaType<Modem::State>("Modem::State");
 
   pppdterm();
 
@@ -335,10 +286,10 @@ bool ModemConnectionManager::connection()
   _pppd->start(_pppdCommand);
   bool isStarted = _pppd->waitForStarted(5000);
   const int pid = (isStarted ? _pppd->processId() : -1);
-  if (pid != _state.internet.PID)
+  if (pid != _modem.state.internet.PID)
   {
-    _state.internet.PID = pid;
-    emit stateChanged(_state);
+    _modem.state.internet.PID = pid;
+    emit stateChanged(_modem.state);
   }
   if (_connectionHopes)
   {
@@ -373,8 +324,8 @@ void ModemConnectionManager::disconnection()
       throw global::Exception("Cannot terminate pppd");
   }
 
-  clearState(_state, false);
-  emit stateChanged(_state);
+  clearState(_modem.state, false);
+  emit stateChanged(_modem.state);
 }
 
 bool ModemConnectionManager::modemHardReset()
@@ -388,8 +339,8 @@ bool ModemConnectionManager::modemHardReset()
   bool isOk = process.waitForStarted(5000);
   if (isOk)
   {
-    clearState(_state, true);
-    emit stateChanged(_state);
+    clearState(_modem.state, true);
+    emit stateChanged(_modem.state);
     isOk = process.waitForFinished();
   }
   return isOk;
@@ -416,7 +367,7 @@ void ModemConnectionManager::_pppdOutput()
   match = rx.match(data);
   if (match.isValid() && match.hasMatch())
   {
-    _state.internet.Interface = match.captured(1);
+    _modem.state.internet.Interface = match.captured(1);
     isStateChanged = true;
   }
 
@@ -428,7 +379,7 @@ void ModemConnectionManager::_pppdOutput()
   match = rx.match(data);
   if (match.isValid() && match.hasMatch())
   {
-    _state.internet.RemoteAddress = match.captured(1);
+    _modem.state.internet.RemoteAddress = match.captured(1);
     isStateChanged = true;
   }
 
@@ -436,7 +387,7 @@ void ModemConnectionManager::_pppdOutput()
   match = rx.match(data);
   if (match.isValid() && match.hasMatch())
   {
-    _state.internet.LocalAddress = match.captured(1);
+    _modem.state.internet.LocalAddress = match.captured(1);
     isStateChanged = true;
   }
 
@@ -444,7 +395,7 @@ void ModemConnectionManager::_pppdOutput()
   match = rx.match(data);
   if (match.isValid() && match.hasMatch())
   {
-    _state.internet.PrimaryDNS = match.captured(1);
+    _modem.state.internet.PrimaryDNS = match.captured(1);
     isStateChanged = true;
   }
 
@@ -452,12 +403,12 @@ void ModemConnectionManager::_pppdOutput()
   match = rx.match(data);
   if (match.isValid() && match.hasMatch())
   {
-    _state.internet.SecondaryDNS = match.captured(1);
+    _modem.state.internet.SecondaryDNS = match.captured(1);
     isStateChanged = true;
   }
 
   if (isStateChanged)
-    emit stateChanged(_state);
+    emit stateChanged(_modem.state);
 
   return;
 }
@@ -470,8 +421,8 @@ void ModemConnectionManager::_pppdFinished(int exitCode, int exitStatus)
   //  if (6 == exitCode)
   //    modemHardReset();
 
-  clearState(_state, false);
-  emit stateChanged(_state);
+  clearState(_modem.state, false);
+  emit stateChanged(_modem.state);
 
   DF(exitCode << errorString(exitCode));
   if (_reconnectionTimer && _pppd)
@@ -494,10 +445,10 @@ bool ModemConnectionManager::modemResponseParser_SIM7600E_H(const QByteArray &da
     QRegularExpressionMatch match = rx.match(data);
     if (!match.isValid() || !match.hasMatch())
       return false;
-    _state.modem.Manufacturer = match.captured(1);
-    _state.modem.Model = match.captured(2);
-    _state.modem.Revision = match.captured(3);
-    _state.modem.IMEI = match.captured(4);
+    _modem.state.modem.Manufacturer = match.captured(1);
+    _modem.state.modem.Model = match.captured(2);
+    _modem.state.modem.Revision = match.captured(3);
+    _modem.state.modem.IMEI = match.captured(4);
     return true;
   }
   else if ("AT+CICCID" == cmd)
@@ -506,7 +457,7 @@ bool ModemConnectionManager::modemResponseParser_SIM7600E_H(const QByteArray &da
     QRegularExpressionMatch match = rx.match(data);
     if (!match.isValid() || !match.hasMatch())
       return false;
-    _state.sim.ICCID = match.captured(1);
+    _modem.state.sim.ICCID = match.captured(1);
     return true;
   }
   else if ("AT+CSPN?" == cmd)
@@ -515,7 +466,7 @@ bool ModemConnectionManager::modemResponseParser_SIM7600E_H(const QByteArray &da
     QRegularExpressionMatch match = rx.match(data);
     if (!match.isValid() || !match.hasMatch())
       return false;
-    _state.sim.Operator = match.captured(1);
+    _modem.state.sim.Operator = match.captured(1);
     return true;
   }
   else if ("AT+CREG?" == cmd)
@@ -524,7 +475,7 @@ bool ModemConnectionManager::modemResponseParser_SIM7600E_H(const QByteArray &da
     QRegularExpressionMatch match = rx.match(data);
     if (!match.isValid() || !match.hasMatch())
       return false;
-    _state.network.Registration = State::Network::registration(match.captured(1).right(1).toInt());
+    _modem.state.network.Registration = Modem::State::Network::registration(match.captured(1).right(1).toInt());
     return true;
   }
   else if ("AT+CGREG?" == cmd)
@@ -533,7 +484,7 @@ bool ModemConnectionManager::modemResponseParser_SIM7600E_H(const QByteArray &da
     QRegularExpressionMatch match = rx.match(data);
     if (!match.isValid() || !match.hasMatch())
       return false;
-    _state.network.GPRS = State::Network::gprs(match.captured(1).right(1).toInt());
+    _modem.state.network.GPRS = Modem::State::Network::gprs(match.captured(1).right(1).toInt());
     return true;
   }
   return false;

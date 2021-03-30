@@ -1,4 +1,5 @@
 QT -= gui
+QT += serialport
 
 ### Library ###
 #TEMPLATE = app
@@ -26,11 +27,15 @@ CONFIG += c++11
 
 SOURCES += \
         Global.cpp \
+        Modem.cpp \
+        ModemCommander.cpp \
         ModemConnectionAutomator.cpp \
         ModemConnectionManager.cpp
 
 HEADERS += \
     Global.h \
+    Modem.h \
+    ModemCommander.h \
     ModemConnectionAutomator.h \
     ModemConnectionManager_global.h \
     ModemConnectionManager.h

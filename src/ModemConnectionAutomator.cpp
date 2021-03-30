@@ -24,7 +24,7 @@ ModemConnectionAutomator::~ModemConnectionAutomator()
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-const ModemConnectionManager::State &ModemConnectionAutomator::state() const
+const Modem::State &ModemConnectionAutomator::state() const
 {
   PF();
   return _state;
@@ -72,13 +72,13 @@ bool ModemConnectionAutomator::modemHardReset()
 void ModemConnectionAutomator::onStarted()
 {
   PF();
-  qRegisterMetaType<ModemConnectionManager::State>("ModemConnectionManager::State");
+  qRegisterMetaType<Modem::State>("Modem::State");
   connect(_mcm, &ModemConnectionManager::stateChanged, this, &ModemConnectionAutomator::onStateChanged);
   connection();
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-void ModemConnectionAutomator::onStateChanged(const ModemConnectionManager::State &state)
+void ModemConnectionAutomator::onStateChanged(const Modem::State &state)
 {
   PF();
   _state = state;

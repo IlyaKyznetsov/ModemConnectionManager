@@ -11,10 +11,10 @@ public:
   explicit ModemConnectionAutomator(const QString &path = QString(), QObject *parent = nullptr);
   ~ModemConnectionAutomator();
 
-  const ModemConnectionManager::State &state() const;
+  const Modem::State &state() const;
 
 Q_SIGNALS:
-  void stateChanged(const ModemConnectionManager::State state);
+  void stateChanged(const Modem::State state);
 
 public Q_SLOTS:
   bool connection();
@@ -23,7 +23,7 @@ public Q_SLOTS:
 
 private Q_SLOTS:
   void onStarted();
-  void onStateChanged(const ModemConnectionManager::State &state);
+  void onStateChanged(const Modem::State &state);
 
 private:
   ModemConnectionAutomator(const ModemConnectionAutomator &) = delete;
@@ -33,7 +33,7 @@ private:
 
   QThread *_thread;
   ModemConnectionManager *_mcm;
-  ModemConnectionManager::State _state;
+  Modem::State _state;
 };
 
 #endif // MODEMCONNECTIONAUTOMATOR_H
