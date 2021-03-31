@@ -4,6 +4,7 @@
 #include <ModemConnectionManager.h>
 #include <ModemConnectionManager_global.h>
 
+class QUdevDevice;
 class MODEMCONNECTIONMANAGER_EXPORT ModemConnectionAutomator : public QObject
 {
   Q_OBJECT
@@ -24,6 +25,7 @@ public Q_SLOTS:
 private Q_SLOTS:
   void onStarted();
   void onStateChanged(const Modem::State &state);
+  void qudevDeviceEvent(const QUdevDevice &event);
 
 private:
   ModemConnectionAutomator(const ModemConnectionAutomator &) = delete;

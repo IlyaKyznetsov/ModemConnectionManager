@@ -2,8 +2,8 @@ QT -= gui
 QT += serialport
 
 ### Library ###
-#TEMPLATE = app
-TEMPLATE = lib
+TEMPLATE = app
+#TEMPLATE = lib
 DEFINES += MODEMCONNECTIONMANAGER_LIBRARY
 # Default rules for deployment.
 unix {
@@ -25,12 +25,18 @@ CONFIG += c++11
 # In order to do so, uncomment the following line.
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
+LIBS += -ludev
+
+SOURCES += main.cpp
+
 SOURCES += \
         Global.cpp \
         Modem.cpp \
         ModemCommander.cpp \
         ModemConnectionAutomator.cpp \
-        ModemConnectionManager.cpp
+        ModemConnectionManager.cpp \
+        QUdev.cpp \
+        QUdevDevice.cpp
 
 HEADERS += \
     Global.h \
@@ -38,7 +44,9 @@ HEADERS += \
     ModemCommander.h \
     ModemConnectionAutomator.h \
     ModemConnectionManager_global.h \
-    ModemConnectionManager.h
+    ModemConnectionManager.h \
+    QUdev.h \
+    QUdevDevice.h
 
 RESOURCES += \
     resources.qrc

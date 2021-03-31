@@ -1,11 +1,18 @@
 #include "ModemConnectionAutomator.h"
-
 #include "Global.h"
+#include <QUdev.h>
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 ModemConnectionAutomator::ModemConnectionAutomator(const QString &path, QObject *parent) : QObject(parent)
 {
   PF();
+  auto &udev = QUdev::instance();
+  connect(&udev, &QUdev::qudevDeviceEvent, this, &ModemConnectionAutomator::qudevDeviceEvent, Qt::QueuedConnection);
+  udev.addMonitoringDevice(QUdevMonitoringDevice(
+      "SIM7600E", {{"SUBSYSTEM", "tty"}, {"ID_VENDOR_ID", "1e0e"}, {"ID_MODEL_ID", "9001"}}, {"DEVPATH"}));
+  udev.enumerateAllDevices();
+  udev.runMonitoring();
+
   _thread = new QThread(this);
   _mcm = new ModemConnectionManager(path);
   _mcm->moveToThread(_thread);
@@ -83,4 +90,13 @@ void ModemConnectionAutomator::onStateChanged(const Modem::State &state)
   PF();
   _state = state;
   emit stateChanged(_state);
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+void ModemConnectionAutomator::qudevDeviceEvent(const QUdevDevice &event)
+{
+  const auto type = event.type();
+  const auto name = event.name();
+  DF(toString(type) + ':' + name);
+  D(event.toString());
 }

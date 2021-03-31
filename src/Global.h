@@ -6,6 +6,13 @@
 #include <QException>
 #include <QThread>
 
+#if defined(LIRI_BUILD_QTUDEV_LIB)
+#define QTUDEV_EXPORT Q_DECL_EXPORT
+#else
+#define QTUDEV_EXPORT Q_DECL_IMPORT
+#endif
+#define QTUDEV_NO_EXPORT Q_DECL_HIDDEN
+
 #define GLOBAL_DEBUG_PREFIX QTime::currentTime().toString("mm:ss.zzz") << QThread::currentThreadId()
 
 #ifdef QT_DEBUG
