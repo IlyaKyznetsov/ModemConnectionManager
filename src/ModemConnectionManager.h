@@ -1,9 +1,9 @@
 #ifndef MODEMCONNECTIONMANAGER_H
 #define MODEMCONNECTIONMANAGER_H
 
+#include <Modem.h>
 #include <ModemConnectionManager_global.h>
 #include <QObject>
-#include <Modem.h>
 
 class QSerialPort;
 class QProcess;
@@ -16,7 +16,7 @@ class MODEMCONNECTIONMANAGER_EXPORT ModemConnectionManager : public QObject
 public:
   Modem::State state() const;
 
-  explicit ModemConnectionManager(const QString &path = QString(), QObject *parent = nullptr);
+  explicit ModemConnectionManager(Modem *modem, const QString &path = QString(), QObject *parent = nullptr);
   ~ModemConnectionManager();
 
 Q_SIGNALS:
@@ -25,7 +25,7 @@ Q_SIGNALS:
 public Q_SLOTS:
   bool connection();
   void disconnection();
-  bool modemHardReset();
+  bool reset();
 
 private Q_SLOTS:
   void _pppdOutput();
@@ -36,17 +36,18 @@ private:
   ModemConnectionManager(ModemConnectionManager &&) = delete;
   ModemConnectionManager &operator=(const ModemConnectionManager &) = delete;
   ModemConnectionManager &operator=(ModemConnectionManager &&) = delete;
+  bool modemServicePortOpen();
+  bool modemServicePortCommand(const QByteArray &ATCommand);
+  void modemServicePortClose();
 
   int _connectionHopes = 0;
   int _reconnectionHope = 0;
-  QSerialPort *_serialPort;
+  Modem *_modem = nullptr;
+  QSerialPort* _modemServicePort=0;
   QTimer *_reconnectionTimer = nullptr;
   QProcess *_pppd = nullptr;
   QByteArray _pppdCommand;
   QByteArray _modemResetCommand;
-  Modem _modem;
-  QByteArray modemChatConfiguration_SIM7600E_H(const QByteArray &phone, const QString &accessPoint) const;
-  bool modemResponseParser_SIM7600E_H(const QByteArray &data);
 };
 
 #endif // MODEMCONNECTIONMANAGER_H

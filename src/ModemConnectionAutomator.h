@@ -34,7 +34,7 @@ private:
   ModemConnectionAutomator &operator=(ModemConnectionAutomator &&) = delete;
 
   QThread *_thread;
-  ModemConnectionManager *_mcm;
+  ModemConnectionManager *_mcm = nullptr;
   Modem::State _state;
 };
 

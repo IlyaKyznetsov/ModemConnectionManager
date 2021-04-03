@@ -27,12 +27,12 @@ CONFIG += c++11
 
 LIBS += -ludev
 
-SOURCES += main.cpp
+SOURCES += main.cpp \
+    modems/SIM7600E_H.cpp
 
 SOURCES += \
         Global.cpp \
         Modem.cpp \
-        ModemCommander.cpp \
         ModemConnectionAutomator.cpp \
         ModemConnectionManager.cpp \
         QUdev.cpp \
@@ -41,12 +41,12 @@ SOURCES += \
 HEADERS += \
     Global.h \
     Modem.h \
-    ModemCommander.h \
     ModemConnectionAutomator.h \
     ModemConnectionManager_global.h \
     ModemConnectionManager.h \
     QUdev.h \
-    QUdevDevice.h
+    QUdevDevice.h \
+    modems/SIM7600E_H.h
 
 RESOURCES += \
     resources.qrc

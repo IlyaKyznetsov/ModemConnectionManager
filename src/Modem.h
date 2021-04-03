@@ -59,9 +59,13 @@ public:
     bool status() const { return modem.status && sim.status && network.status && internet.status; }
   };
 
+  QByteArray portConnection = "/dev/ttyUSB2";
+  QByteArray portService = "/dev/ttyUSB3";
+  QByteArray portGps = "/dev/ttyUSB4";
   State state;
-  static bool modemReset_SIM7600E_H();
-  bool modemResponseParser_SIM7600E_H(const QByteArray &data);
+  virtual bool reset() = 0;
+  virtual bool parseResponse(const QByteArray &data) = 0;
+  QByteArray chatConfiguration(const QByteArray &phone, const QString &accessPoint) const;
 };
 QString toString(Modem::State::Network::registration status);
 QString toString(Modem::State::Network::gprs status);

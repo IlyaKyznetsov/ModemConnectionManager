@@ -129,13 +129,15 @@ inline void clearState(Modem::State &state, bool all)
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 Modem::State ModemConnectionManager::state() const
 {
-  return _modem.state;
+  return _modem->state;
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *parent) : QObject(parent)
+ModemConnectionManager::ModemConnectionManager(Modem *modem, const QString &path, QObject *parent)
+    : QObject(parent), _modem(modem)
 {
   DF(path);
+  D("XXX:" << modem->portConnection << modem->portService << modem->portGps);
   qRegisterMetaType<Modem::State>("Modem::State");
 
   pppdterm();
@@ -150,11 +152,12 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
   // settings.setIniCodec("UTF-8");
 
   settings.beginGroup("Modem Configuration");
-  const QByteArray modem = settings.value("Modem").toByteArray();
-  D(modem);
-  if (modem.isEmpty())
+  const QByteArray &portConnection = modem->portConnection;
+  D(portConnection);
+  if (portConnection.isEmpty())
     throw global::Exception("[Modem Configuration] Modem not exist");
-  pppdCommandAppend(modem.mid(modem.lastIndexOf('/') + 1));
+
+  pppdCommandAppend(portConnection.mid(portConnection.lastIndexOf('/') + 1));
 
   const QByteArray baud = settings.value("Baud").toByteArray();
   if (baud.isEmpty())
@@ -193,7 +196,7 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
   const QByteArray accessPoint = settings.value("AccessPoint").toByteArray();
   settings.endGroup();
   pppdCommandAppend("connect");
-  pppdCommandAppend(modemChatConfiguration_SIM7600E_H(phone, accessPoint));
+  pppdCommandAppend(_modem->chatConfiguration(phone, accessPoint));
 
   // Create secrets:
   const int count = 2;
@@ -234,35 +237,46 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-QByteArray ModemConnectionManager::modemChatConfiguration_SIM7600E_H(const QByteArray &phone,
-                                                                     const QString &accessPoint) const
+bool ModemConnectionManager::modemServicePortOpen()
 {
-  QByteArray command = "\"";
-  command.append("/usr/sbin/chat -v -s -S");
-  if (!accessPoint.isEmpty())
-    command.append(" -T " + accessPoint);
-  command.append(" ABORT 'NO CARRIER'");
-  command.append(" ABORT 'NO DIALTONE'");
-  command.append(" ABORT ERROR");
-  command.append(" ABORT 'NO ANSWER'");
-  command.append(" ABORT BUSY");
-  command.append(" TIMEOUT 5");
-  command.append(" OK-AT-OK ATZ");
-  command.append(" OK-AT-OK ATI");
-  command.append(" OK-AT-OK AT+CICCID");
-  command.append(" OK-AT-OK AT+CSPN?");
-  command.append(" OK-AT-OK AT+CREG?");
-  command.append(" OK-AT-OK AT+CGREG?");
-  command.append(" OK ATD" + phone);
-  command.append(" CONNECT \\c");
-  command.append('\"');
-  return command;
+  if (!_modemServicePort)
+    return false;
+  return _modemServicePort->open(QIODevice::ReadWrite);
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+void ModemConnectionManager::modemServicePortClose()
+{
+  if (_modemServicePort && _modemServicePort->isOpen())
+    _modemServicePort->close();
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+bool ModemConnectionManager::modemServicePortCommand(const QByteArray &ATCommand)
+{
+  if (!(_modemServicePort && _modemServicePort->isOpen() &&
+        ((2 + ATCommand.length() == _modemServicePort->write(ATCommand + "\r\n")) &&
+         _modemServicePort->waitForBytesWritten() && _modemServicePort->waitForReadyRead())))
+    return false;
+
+  QByteArray data = _modemServicePort->readAll().simplified();
+  if (ATCommand != data)
+    return false;
+  _modemServicePort->waitForReadyRead();
+  data.append(" " + _modemServicePort->readAll().simplified());
+  if (data.isEmpty())
+    return false;
+  data.replace("\r\n", " ");
+  bool isOk = _modem->parseResponse(data);
+  return true;
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 ModemConnectionManager::~ModemConnectionManager()
 {
   PF();
+  if (_modemServicePort && _modemServicePort->isOpen())
+    _modemServicePort->close();
   if (_reconnectionTimer)
   {
     _reconnectionTimer->disconnect(this);
@@ -279,34 +293,49 @@ ModemConnectionManager::~ModemConnectionManager()
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 bool ModemConnectionManager::connection()
 {
-  DF(_pppd->program());
+  DF("Started");
   disconnection();
+
+  modemServicePortOpen();
+  modemServicePortCommand("ATI");
+  modemServicePortCommand("AT+CICCID");
+  modemServicePortCommand("AT+CSPN?");
+  modemServicePortCommand("ATZ");
+  modemServicePortCommand("ATI");
+  modemServicePortCommand("AT+CICCID");
+  modemServicePortCommand("AT+CSPN?");
+  modemServicePortClose();
+
   if (_reconnectionTimer && _pppd->signalsBlocked())
     _pppd->blockSignals(false);
   _pppd->start(_pppdCommand);
   bool isStarted = _pppd->waitForStarted(5000);
   const int pid = (isStarted ? _pppd->processId() : -1);
-  if (pid != _modem.state.internet.PID)
+  D("XXX:" << _modem);
+  if (pid != _modem->state.internet.PID)
   {
-    _modem.state.internet.PID = pid;
-    emit stateChanged(_modem.state);
+
+    _modem->state.internet.PID = pid;
+    emit stateChanged(_modem->state);
   }
+
   if (_connectionHopes)
   {
     if (!_reconnectionHope)
-      modemHardReset();
+      reset();
     else
       --_reconnectionHope;
 
     D("ConnectionHope:" << _reconnectionHope);
   }
   return isStarted;
+  DF("Finished");
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 void ModemConnectionManager::disconnection()
 {
-  PF();
+  DF(_pppd);
 
   if (_reconnectionTimer)
   {
@@ -324,24 +353,22 @@ void ModemConnectionManager::disconnection()
       throw global::Exception("Cannot terminate pppd");
   }
 
-  clearState(_modem.state, false);
-  emit stateChanged(_modem.state);
+  clearState(_modem->state, false);
+  emit stateChanged(_modem->state);
+  DF("Finished");
 }
 
-bool ModemConnectionManager::modemHardReset()
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+bool ModemConnectionManager::reset()
 {
   PF();
   if (_connectionHopes)
     _reconnectionHope = _connectionHopes;
-
-  QProcess process;
-  process.start(_modemResetCommand, QStringList());
-  bool isOk = process.waitForStarted(5000);
+  bool isOk = _modem->reset();
   if (isOk)
   {
-    clearState(_modem.state, true);
-    emit stateChanged(_modem.state);
-    isOk = process.waitForFinished();
+    clearState(_modem->state, true);
+    emit stateChanged(_modem->state);
   }
   return isOk;
 }
@@ -359,7 +386,7 @@ void ModemConnectionManager::_pppdOutput()
   D(data);
 
   // Parse AT Commands responses
-  bool isStateChanged = modemResponseParser_SIM7600E_H(data);
+  bool isStateChanged = _modem->parseResponse(data);
 
   // Parse Pppd output
   QRegularExpression rx("Using interface (\\S+) ");
@@ -367,7 +394,7 @@ void ModemConnectionManager::_pppdOutput()
   match = rx.match(data);
   if (match.isValid() && match.hasMatch())
   {
-    _modem.state.internet.Interface = match.captured(1);
+    _modem->state.internet.Interface = match.captured(1);
     isStateChanged = true;
   }
 
@@ -379,7 +406,7 @@ void ModemConnectionManager::_pppdOutput()
   match = rx.match(data);
   if (match.isValid() && match.hasMatch())
   {
-    _modem.state.internet.RemoteAddress = match.captured(1);
+    _modem->state.internet.RemoteAddress = match.captured(1);
     isStateChanged = true;
   }
 
@@ -387,7 +414,7 @@ void ModemConnectionManager::_pppdOutput()
   match = rx.match(data);
   if (match.isValid() && match.hasMatch())
   {
-    _modem.state.internet.LocalAddress = match.captured(1);
+    _modem->state.internet.LocalAddress = match.captured(1);
     isStateChanged = true;
   }
 
@@ -395,7 +422,7 @@ void ModemConnectionManager::_pppdOutput()
   match = rx.match(data);
   if (match.isValid() && match.hasMatch())
   {
-    _modem.state.internet.PrimaryDNS = match.captured(1);
+    _modem->state.internet.PrimaryDNS = match.captured(1);
     isStateChanged = true;
   }
 
@@ -403,12 +430,12 @@ void ModemConnectionManager::_pppdOutput()
   match = rx.match(data);
   if (match.isValid() && match.hasMatch())
   {
-    _modem.state.internet.SecondaryDNS = match.captured(1);
+    _modem->state.internet.SecondaryDNS = match.captured(1);
     isStateChanged = true;
   }
 
   if (isStateChanged)
-    emit stateChanged(_modem.state);
+    emit stateChanged(_modem->state);
 
   return;
 }
@@ -421,8 +448,8 @@ void ModemConnectionManager::_pppdFinished(int exitCode, int exitStatus)
   //  if (6 == exitCode)
   //    modemHardReset();
 
-  clearState(_modem.state, false);
-  emit stateChanged(_modem.state);
+  clearState(_modem->state, false);
+  emit stateChanged(_modem->state);
 
   DF(exitCode << errorString(exitCode));
   if (_reconnectionTimer && _pppd)
@@ -430,62 +457,4 @@ void ModemConnectionManager::_pppdFinished(int exitCode, int exitStatus)
     D("Try reconnect after: " << _reconnectionTimer->interval() / 1000 << "secs");
     _reconnectionTimer->start();
   }
-}
-
-/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-bool ModemConnectionManager::modemResponseParser_SIM7600E_H(const QByteArray &data)
-{
-  int index = data.indexOf(' ');
-  if (-1 == index)
-    return false;
-  const QByteArray &cmd = data.left(index);
-  if ("ATI" == cmd)
-  {
-    QRegularExpression rx("Manufacturer: (.*) Model: (.*) Revision: (.*) IMEI: (.*) \\+GCAP");
-    QRegularExpressionMatch match = rx.match(data);
-    if (!match.isValid() || !match.hasMatch())
-      return false;
-    _modem.state.modem.Manufacturer = match.captured(1);
-    _modem.state.modem.Model = match.captured(2);
-    _modem.state.modem.Revision = match.captured(3);
-    _modem.state.modem.IMEI = match.captured(4);
-    return true;
-  }
-  else if ("AT+CICCID" == cmd)
-  {
-    QRegularExpression rx("\\+ICCID: (.*)  OK");
-    QRegularExpressionMatch match = rx.match(data);
-    if (!match.isValid() || !match.hasMatch())
-      return false;
-    _modem.state.sim.ICCID = match.captured(1);
-    return true;
-  }
-  else if ("AT+CSPN?" == cmd)
-  {
-    QRegularExpression rx("\\+CSPN: \"(.*)\",[0-1]  OK");
-    QRegularExpressionMatch match = rx.match(data);
-    if (!match.isValid() || !match.hasMatch())
-      return false;
-    _modem.state.sim.Operator = match.captured(1);
-    return true;
-  }
-  else if ("AT+CREG?" == cmd)
-  {
-    QRegularExpression rx("\\+CREG: ([0-9],[0-9])  OK");
-    QRegularExpressionMatch match = rx.match(data);
-    if (!match.isValid() || !match.hasMatch())
-      return false;
-    _modem.state.network.Registration = Modem::State::Network::registration(match.captured(1).right(1).toInt());
-    return true;
-  }
-  else if ("AT+CGREG?" == cmd)
-  {
-    QRegularExpression rx("\\+CGREG: ([0-9],[0-9])  OK");
-    QRegularExpressionMatch match = rx.match(data);
-    if (!match.isValid() || !match.hasMatch())
-      return false;
-    _modem.state.network.GPRS = Modem::State::Network::gprs(match.captured(1).right(1).toInt());
-    return true;
-  }
-  return false;
 }
