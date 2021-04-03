@@ -29,6 +29,16 @@ bool SIM7600E_H::reset()
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+QList<QByteArray> SIM7600E_H::commands() const
+{
+  QList<QByteArray> res;
+  res.append("ATI");
+  res.append("AT+CICCID");
+  res.append("AT+CSPN?");
+  return res;
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 bool SIM7600E_H::parseResponse(const QByteArray &data)
 {
   int index = data.indexOf(' ');

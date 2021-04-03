@@ -297,14 +297,12 @@ bool ModemConnectionManager::connection()
   disconnection();
 
   modemServicePortOpen();
-  modemServicePortCommand("ATI");
-  modemServicePortCommand("AT+CICCID");
-  modemServicePortCommand("AT+CSPN?");
-  modemServicePortCommand("ATZ");
-  modemServicePortCommand("ATI");
-  modemServicePortCommand("AT+CICCID");
-  modemServicePortCommand("AT+CSPN?");
+  const auto commands = _modem->commands();
+  for (const auto &command : commands)
+    modemServicePortCommand(command);
   modemServicePortClose();
+
+//  if(_modem->)
 
   if (_reconnectionTimer && _pppd->signalsBlocked())
     _pppd->blockSignals(false);

@@ -64,8 +64,9 @@ public:
   QByteArray portGps = "/dev/ttyUSB4";
   State state;
   virtual bool reset() = 0;
+  virtual QList<QByteArray> commands() const = 0;
   virtual bool parseResponse(const QByteArray &data) = 0;
-  QByteArray chatConfiguration(const QByteArray &phone, const QString &accessPoint) const;
+  virtual QByteArray chatConfiguration(const QByteArray &phone, const QString &accessPoint) const;
 };
 QString toString(Modem::State::Network::registration status);
 QString toString(Modem::State::Network::gprs status);

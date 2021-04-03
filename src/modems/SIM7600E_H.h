@@ -8,11 +8,10 @@ class SIM7600E_H : public Modem
 public:
   SIM7600E_H();
 
-  /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-  bool reset() override;
-
-  /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-  bool parseResponse(const QByteArray &data) override;
+  // Modem interface
+  virtual bool reset() override;
+  virtual QList<QByteArray> commands() const override;
+  virtual bool parseResponse(const QByteArray &data) override;
 };
 
 #endif // SIM7600E_H_H
