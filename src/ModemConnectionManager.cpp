@@ -127,9 +127,28 @@ inline void clearState(Modem::State &state, bool all)
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-QByteArray ModemConnectionManager::modem() const
+void ModemConnectionManager::setModem(Modem *modem)
 {
-  return _modem->name();
+  _modem = std::move(modem);
+  DF(_modem << modem);
+  if (!_modem)
+  {
+    _pppdCommand.clear();
+    return;
+  }
+
+  const QByteArray port = modem->portConnection();
+  _pppdCommand = "/usr/sbin/pppd " + port.mid(port.lastIndexOf('/') + 1) + " " +
+                 QByteArray::number(_modem->baudRate()) + " " + _options + " connect " +
+                 _modem->chatConfiguration(_phone, _accessPoint);
+  if (!_user.isEmpty())
+    _pppdCommand += " user " + _user;
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+QByteArray ModemConnectionManager::modemName() const
+{
+  return (_modem ? _modem->name() : QByteArray());
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
@@ -139,83 +158,21 @@ Modem::State ModemConnectionManager::state() const
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-ModemConnectionManager::ModemConnectionManager(Modem *modem, const QString &path, QObject *parent)
-    : QObject(parent), _modem(modem)
+ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *parent) : QObject(parent)
 {
   DF(path);
-  const QByteArray &portService = modem->portService();
-  const QByteArray &portConnection = modem->portConnection();
-  const QByteArray &portGps = modem->portGps();
-
-  QSerialPort servicePort((portService.isNull() ? portConnection : portService), this);
-  if (!(servicePort.setBaudRate(modem->baudRate()) && servicePort.setDataBits(QSerialPort::Data8) &&
-        servicePort.setFlowControl(QSerialPort::HardwareControl) && servicePort.setParity(QSerialPort::NoParity) &&
-        servicePort.setStopBits(QSerialPort::OneStop)))
-    throw global::Exception("Cannot create SerialPort");
-
-  if (!servicePort.open(QIODevice::ReadWrite))
-    throw global::Exception("Cannot open SerialPort");
-
-  auto modemCommand = [&servicePort, this](const QByteArray &ATCommand) -> bool {
-    if (!(servicePort.isOpen() && ((2 + ATCommand.length() == servicePort.write(ATCommand + "\r\n")) &&
-                                   servicePort.waitForBytesWritten() && servicePort.waitForReadyRead())))
-      return false;
-
-    QByteArray data = servicePort.readAll().simplified();
-    if (ATCommand != data)
-      return false;
-    servicePort.waitForReadyRead();
-    data.append(" " + servicePort.readAll().simplified());
-    if (data.isEmpty())
-      return false;
-    data.replace("\r\n", " ");
-    _modem->parseResponse(data);
-    return true;
-  };
-
-  const auto commands = _modem->commands();
-  for (const auto &command : commands)
-  {
-    if (!modemCommand(command) || !_modem->status())
-      throw global::Exception("Error modem on command: " + command);
-  }
-
-  servicePort.close();
-
   qRegisterMetaType<Modem::State>("Modem::State");
   pppdterm();
-
-  _pppdCommand = "/usr/sbin/pppd";
-  auto pppdCommandAppend = [this](const QByteArray &data) { _pppdCommand += ' ' + data; };
 
   // Read configuration
   QSettings::Format format = QSettings::registerFormat("ModemConnectionManager", readSettings, nullptr);
   const QString rpath = (!path.isEmpty() && QFile::exists(path) ? path : "://ModemConnectionManager.conf");
   QSettings settings(rpath, format, this);
   // settings.setIniCodec("UTF-8");
-
-  pppdCommandAppend(portConnection.mid(portConnection.lastIndexOf('/') + 1));
-  pppdCommandAppend(QString::number(modem->baudRate()).toLatin1());
-  _modemResetCommand = settings.value("Reset").toByteArray();
-  if (_modemResetCommand.isEmpty())
-  {
-    QFile file("://ModemHardRestarting.sh");
-    file.open(QIODevice::ReadOnly);
-    const QByteArray data = file.readAll();
-    file.close();
-    file.setFileName("/tmp/ModemHardRestarting.sh");
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
-      throw global::Exception("Not exist Modem hard restarting command");
-    file.write(data);
-    file.setPermissions(QFileDevice::ReadUser | QFileDevice::WriteUser | QFileDevice::ExeUser | QFileDevice::ReadGroup |
-                        QFileDevice::ExeGroup | QFileDevice::ExeOther);
-    file.close();
-    _modemResetCommand = "/tmp/ModemHardRestarting.sh";
-  }
   settings.beginGroup("Pppd Settings");
   const QStringList options = settings.value("options").toStringList();
   for (const QString &item : options)
-    pppdCommandAppend(item.toLatin1());
+    _options += ' ' + item.toLatin1();
   settings.endGroup();
   settings.beginGroup("Connection Settings");
   _reconnectionHope = _connectionHopes = settings.value("ResetConnectionHopes", 0).toInt();
@@ -223,27 +180,23 @@ ModemConnectionManager::ModemConnectionManager(Modem *modem, const QString &path
   const QByteArray phone = settings.value("Phone").toByteArray();
   if (phone.isEmpty())
     throw global::Exception("[Connection Settings] Phone not exist");
-  const QByteArray user = settings.value("User").toByteArray();
+  _user = settings.value("User").toByteArray();
   const QByteArray password = settings.value("Password").toByteArray();
-  const QByteArray accessPoint = settings.value("AccessPoint").toByteArray();
+  _accessPoint = settings.value("AccessPoint").toByteArray();
   settings.endGroup();
-  pppdCommandAppend("connect");
-  pppdCommandAppend(_modem->chatConfiguration(phone, accessPoint));
 
   // Create secrets:
   const int count = 2;
   const QString files[count] = {"/etc/ppp/chap-secrets", "/etc/ppp/pap-secrets"};
 
-  if (!user.isEmpty() && !password.isEmpty())
+  if (!_user.isEmpty() && !password.isEmpty())
   {
-    pppdCommandAppend("user");
-    pppdCommandAppend(user);
     for (int i = 0; i != count; ++i)
     {
       QFile file(files[i]);
       if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
         throw global::Exception("Cannot write secrets files");
-      file.write(user + '\t' + '*' + '\t' + password);
+      file.write(_user + '\t' + '*' + '\t' + password);
       file.setPermissions(QFileDevice::ReadUser | QFileDevice::WriteUser);
       file.close();
     }
@@ -288,15 +241,19 @@ ModemConnectionManager::~ModemConnectionManager()
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 bool ModemConnectionManager::connection()
 {
-  DF("Started");
+  if (!_modem)
+    return false;
+  DF("Started" << _pppdCommand);
   disconnection();
 
   if (_reconnectionTimer && _pppd->signalsBlocked())
     _pppd->blockSignals(false);
+  if (_pppdCommand.isEmpty())
+    return false;
+
   _pppd->start(_pppdCommand);
   bool isStarted = _pppd->waitForStarted(5000);
   const int pid = (isStarted ? _pppd->processId() : -1);
-  D("XXX:" << _modem);
   if (pid != _modem->state.internet.PID)
   {
 
@@ -338,8 +295,15 @@ void ModemConnectionManager::disconnection()
       throw global::Exception("Cannot terminate pppd");
   }
 
-  clearState(_modem->state, false);
-  emit stateChanged(_modem->state);
+  if (_modem)
+  {
+    clearState(_modem->state, false);
+    emit stateChanged(_modem->state);
+  }
+  else
+  {
+    emit stateChanged(Modem::State());
+  }
   DF("Finished");
 }
 

@@ -59,16 +59,26 @@ public:
   };
 
   State state;
+  Modem() = default;
+  virtual ~Modem() = default;
   bool status() const;
+  bool initialize();
+  virtual bool reset() = 0;
   virtual QByteArray name() const = 0;
   virtual quint32 baudRate() const = 0;
   virtual QByteArray portConnection() const = 0;
   virtual QByteArray portService() const = 0;
   virtual QByteArray portGps() const = 0;
-//  virtual bool reset() = 0;
   virtual QList<QByteArray> commands() const = 0;
   virtual bool parseResponse(const QByteArray &data) = 0;
   virtual QByteArray chatConfiguration(const QByteArray &phone, const QString &accessPoint) const;
+
+private:
+  Modem(const Modem &) = delete;
+  Modem &operator=(const Modem &) = delete;
+  Modem(Modem &&) = delete;
+  Modem &operator=(Modem &&) = delete;
+  bool modemCommand(const QByteArray &ATCommand);
 };
 QString toString(Modem::State::Network::registration status);
 QString toString(Modem::State::Network::gprs status);

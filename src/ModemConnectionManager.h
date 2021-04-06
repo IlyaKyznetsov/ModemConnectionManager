@@ -12,9 +12,10 @@ class MODEMCONNECTIONMANAGER_EXPORT ModemConnectionManager : public QObject
 {
   Q_OBJECT
 public:
-  QByteArray modem() const;
+  void setModem(Modem *modem = nullptr);
+  QByteArray modemName() const;
   Modem::State state() const;
-  explicit ModemConnectionManager(Modem *modem, const QString &path = QString(), QObject *parent = nullptr);
+  explicit ModemConnectionManager(const QString &path = QString(), QObject *parent = nullptr);
   ~ModemConnectionManager();
 
 Q_SIGNALS:
@@ -40,8 +41,8 @@ private:
   Modem *_modem = nullptr;
   QTimer *_reconnectionTimer = nullptr;
   QProcess *_pppd = nullptr;
+  QByteArray _options, _phone, _accessPoint, _user;
   QByteArray _pppdCommand;
-  QByteArray _modemResetCommand;
 };
 
 #endif // MODEMCONNECTIONMANAGER_H

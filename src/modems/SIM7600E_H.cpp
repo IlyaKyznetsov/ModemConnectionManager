@@ -1,11 +1,7 @@
 #include "SIM7600E_H.h"
+#include <Global.h>
 #include <QProcess>
 #include <QRegularExpression>
-
-SIM7600E_H::SIM7600E_H()
-{
-}
-
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 QByteArray SIM7600E_H::name() const
 {
@@ -15,23 +11,10 @@ QByteArray SIM7600E_H::name() const
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 bool SIM7600E_H::reset()
 {
-  QProcess reset;
-  reset.start("/usr/sbin/i2cset -f -y -m 0x40 0 0x20 1 0x40");
-  bool isOk = reset.waitForStarted();
-  if (!isOk)
-    return false;
-  isOk = reset.waitForFinished();
-  if (!isOk)
-    return false;
-  //    QThread::usleep(13250);
-  reset.start("/usr/sbin/i2cset -f -y -m 0x40 0 0x20 1 0x0");
-  if (!isOk)
-    return false;
-  isOk = reset.waitForFinished();
-  if (!isOk)
-    return false;
-  //    QThread::usleep(13250);
-  return true;
+  PF();
+  QProcess::execute("/usr/sbin/i2cset -f -y -m 0x40 0 0x20 1 0x40");
+  QThread::usleep(13250);
+  QProcess::execute("/usr/sbin/i2cset -f -y -m 0x40 0 0x20 1 0x0");
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/

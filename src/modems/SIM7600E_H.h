@@ -6,11 +6,11 @@
 class SIM7600E_H : public Modem
 {
 public:
-  SIM7600E_H();
+  SIM7600E_H() = default;
 
   // Modem interface
+  virtual bool reset() override;
   virtual QByteArray name() const override;
-  static bool reset();
   virtual QList<QByteArray> commands() const override;
   virtual bool parseResponse(const QByteArray &data) override;
   virtual quint32 baudRate() const override;
