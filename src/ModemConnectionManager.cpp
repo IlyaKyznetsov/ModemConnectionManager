@@ -89,7 +89,7 @@ static bool readSettings(QIODevice &device, QSettings::SettingsMap &map)
       continue;
     }
 
-    if ("Modem Configuration" == group || "Connection Settings" == group)
+    if ("Connection Settings" == group)
     {
       int pos = line.indexOf('=');
       if (-1 != pos)
@@ -127,6 +127,12 @@ inline void clearState(Modem::State &state, bool all)
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+QByteArray ModemConnectionManager::modem() const
+{
+  return _modem->name();
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 Modem::State ModemConnectionManager::state() const
 {
   return _modem->state;
@@ -137,9 +143,46 @@ ModemConnectionManager::ModemConnectionManager(Modem *modem, const QString &path
     : QObject(parent), _modem(modem)
 {
   DF(path);
-  D("XXX:" << modem->portConnection << modem->portService << modem->portGps);
-  qRegisterMetaType<Modem::State>("Modem::State");
+  const QByteArray &portService = modem->portService();
+  const QByteArray &portConnection = modem->portConnection();
+  const QByteArray &portGps = modem->portGps();
 
+  QSerialPort servicePort((portService.isNull() ? portConnection : portService), this);
+  if (!(servicePort.setBaudRate(modem->baudRate()) && servicePort.setDataBits(QSerialPort::Data8) &&
+        servicePort.setFlowControl(QSerialPort::HardwareControl) && servicePort.setParity(QSerialPort::NoParity) &&
+        servicePort.setStopBits(QSerialPort::OneStop)))
+    throw global::Exception("Cannot create SerialPort");
+
+  if (!servicePort.open(QIODevice::ReadWrite))
+    throw global::Exception("Cannot open SerialPort");
+
+  auto modemCommand = [&servicePort, this](const QByteArray &ATCommand) -> bool {
+    if (!(servicePort.isOpen() && ((2 + ATCommand.length() == servicePort.write(ATCommand + "\r\n")) &&
+                                   servicePort.waitForBytesWritten() && servicePort.waitForReadyRead())))
+      return false;
+
+    QByteArray data = servicePort.readAll().simplified();
+    if (ATCommand != data)
+      return false;
+    servicePort.waitForReadyRead();
+    data.append(" " + servicePort.readAll().simplified());
+    if (data.isEmpty())
+      return false;
+    data.replace("\r\n", " ");
+    _modem->parseResponse(data);
+    return true;
+  };
+
+  const auto commands = _modem->commands();
+  for (const auto &command : commands)
+  {
+    if (!modemCommand(command) || !_modem->status())
+      throw global::Exception("Error modem on command: " + command);
+  }
+
+  servicePort.close();
+
+  qRegisterMetaType<Modem::State>("Modem::State");
   pppdterm();
 
   _pppdCommand = "/usr/sbin/pppd";
@@ -151,18 +194,8 @@ ModemConnectionManager::ModemConnectionManager(Modem *modem, const QString &path
   QSettings settings(rpath, format, this);
   // settings.setIniCodec("UTF-8");
 
-  settings.beginGroup("Modem Configuration");
-  const QByteArray &portConnection = modem->portConnection;
-  D(portConnection);
-  if (portConnection.isEmpty())
-    throw global::Exception("[Modem Configuration] Modem not exist");
-
   pppdCommandAppend(portConnection.mid(portConnection.lastIndexOf('/') + 1));
-
-  const QByteArray baud = settings.value("Baud").toByteArray();
-  if (baud.isEmpty())
-    throw global::Exception("[Modem Configuration] Baud not exist");
-  pppdCommandAppend(baud);
+  pppdCommandAppend(QString::number(modem->baudRate()).toLatin1());
   _modemResetCommand = settings.value("Reset").toByteArray();
   if (_modemResetCommand.isEmpty())
   {
@@ -179,7 +212,6 @@ ModemConnectionManager::ModemConnectionManager(Modem *modem, const QString &path
     file.close();
     _modemResetCommand = "/tmp/ModemHardRestarting.sh";
   }
-  settings.endGroup();
   settings.beginGroup("Pppd Settings");
   const QStringList options = settings.value("options").toStringList();
   for (const QString &item : options)
@@ -237,46 +269,9 @@ ModemConnectionManager::ModemConnectionManager(Modem *modem, const QString &path
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-bool ModemConnectionManager::modemServicePortOpen()
-{
-  if (!_modemServicePort)
-    return false;
-  return _modemServicePort->open(QIODevice::ReadWrite);
-}
-
-/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-void ModemConnectionManager::modemServicePortClose()
-{
-  if (_modemServicePort && _modemServicePort->isOpen())
-    _modemServicePort->close();
-}
-
-/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-bool ModemConnectionManager::modemServicePortCommand(const QByteArray &ATCommand)
-{
-  if (!(_modemServicePort && _modemServicePort->isOpen() &&
-        ((2 + ATCommand.length() == _modemServicePort->write(ATCommand + "\r\n")) &&
-         _modemServicePort->waitForBytesWritten() && _modemServicePort->waitForReadyRead())))
-    return false;
-
-  QByteArray data = _modemServicePort->readAll().simplified();
-  if (ATCommand != data)
-    return false;
-  _modemServicePort->waitForReadyRead();
-  data.append(" " + _modemServicePort->readAll().simplified());
-  if (data.isEmpty())
-    return false;
-  data.replace("\r\n", " ");
-  bool isOk = _modem->parseResponse(data);
-  return true;
-}
-
-/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 ModemConnectionManager::~ModemConnectionManager()
 {
   PF();
-  if (_modemServicePort && _modemServicePort->isOpen())
-    _modemServicePort->close();
   if (_reconnectionTimer)
   {
     _reconnectionTimer->disconnect(this);
@@ -295,14 +290,6 @@ bool ModemConnectionManager::connection()
 {
   DF("Started");
   disconnection();
-
-  modemServicePortOpen();
-  const auto commands = _modem->commands();
-  for (const auto &command : commands)
-    modemServicePortCommand(command);
-  modemServicePortClose();
-
-//  if(_modem->)
 
   if (_reconnectionTimer && _pppd->signalsBlocked())
     _pppd->blockSignals(false);

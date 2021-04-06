@@ -5,17 +5,15 @@
 #include <ModemConnectionManager_global.h>
 #include <QObject>
 
-class QSerialPort;
 class QProcess;
 class QTimer;
 class QThread;
-
 class MODEMCONNECTIONMANAGER_EXPORT ModemConnectionManager : public QObject
 {
   Q_OBJECT
 public:
+  QByteArray modem() const;
   Modem::State state() const;
-
   explicit ModemConnectionManager(Modem *modem, const QString &path = QString(), QObject *parent = nullptr);
   ~ModemConnectionManager();
 
@@ -36,14 +34,10 @@ private:
   ModemConnectionManager(ModemConnectionManager &&) = delete;
   ModemConnectionManager &operator=(const ModemConnectionManager &) = delete;
   ModemConnectionManager &operator=(ModemConnectionManager &&) = delete;
-  bool modemServicePortOpen();
-  bool modemServicePortCommand(const QByteArray &ATCommand);
-  void modemServicePortClose();
 
   int _connectionHopes = 0;
   int _reconnectionHope = 0;
   Modem *_modem = nullptr;
-  QSerialPort* _modemServicePort=0;
   QTimer *_reconnectionTimer = nullptr;
   QProcess *_pppd = nullptr;
   QByteArray _pppdCommand;

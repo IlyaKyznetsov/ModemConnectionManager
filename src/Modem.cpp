@@ -1,5 +1,10 @@
 #include "Global.h"
 #include <Modem.h>
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+bool Modem::status() const
+{
+    return state.modem.status && state.sim.status && state.network.status && state.internet.status;
+}
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 QString toString(Modem::State::Network::registration status)
@@ -53,8 +58,8 @@ QStringList toStringList(const Modem::State &state)
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 QByteArray Modem::chatConfiguration(const QByteArray &phone, const QString &accessPoint) const
 {
-  QByteArray command = "\"";
-  command.append("/usr/sbin/chat -v -s -S");
+    QByteArray command = "\"";
+    command.append("/usr/sbin/chat -v -s -S");
   if (!accessPoint.isEmpty())
     command.append(" -T " + accessPoint.toLatin1());
   command.append(" ABORT 'NO CARRIER'");

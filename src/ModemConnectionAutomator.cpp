@@ -4,9 +4,11 @@
 #include <modems/SIM7600E_H.h>
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-ModemConnectionAutomator::ModemConnectionAutomator(const QString &path, QObject *parent) : QObject(parent)
+ModemConnectionAutomator::ModemConnectionAutomator(const QString &path, QObject *parent)
+    : QObject(parent), _thread(new QThread(this))
 {
   PF();
+  connect(_thread, &QThread::started, this, &ModemConnectionAutomator::onStarted);
   auto &udev = QUdev::instance();
   connect(&udev, &QUdev::qudevDeviceEvent, this, &ModemConnectionAutomator::qudevDeviceEvent, Qt::QueuedConnection);
   udev.addMonitoringDevice(QUdevMonitoringDevice(
@@ -19,8 +21,11 @@ ModemConnectionAutomator::ModemConnectionAutomator(const QString &path, QObject 
 ModemConnectionAutomator::~ModemConnectionAutomator()
 {
   PF();
-  _mcm->disconnection();
-  _mcm->deleteLater();
+  if (_mcm)
+  {
+    _mcm->disconnection();
+    _mcm->deleteLater();
+  }
   _thread->quit();
   _thread->wait();
 }
@@ -75,9 +80,7 @@ void ModemConnectionAutomator::onStarted()
 {
   PF();
   qRegisterMetaType<Modem::State>("Modem::State");
-
   connect(_mcm, &ModemConnectionManager::stateChanged, this, &ModemConnectionAutomator::onStateChanged);
-
   connection();
 }
 
@@ -102,13 +105,18 @@ void ModemConnectionAutomator::qudevDeviceEvent(const QUdevDevice &event)
     case QUdevDevice::Remove:
     case QUdevDevice::Unbind:
     {
-      if (name == "SIM7600E")
+      const QByteArray modem = _mcm->modem();
+      if (name == modem)
       {
         DF(toString(type) + ':' + name);
         D(event.toString());
-        //        if ()
-        //        {
-        //        }
+        if (_mcm)
+        {
+          _mcm->disconnection();
+          _mcm->deleteLater();
+        }
+        _thread->quit();
+        _thread->wait();
       }
     }
     break;
@@ -122,17 +130,20 @@ void ModemConnectionAutomator::qudevDeviceEvent(const QUdevDevice &event)
         D(event.toString());
         if (!_mcm)
         {
-          _thread = new QThread(this);
-          _mcm = new ModemConnectionManager(new SIM7600E_H);
-          _mcm->moveToThread(_thread);
-          connect(_thread, &QThread::started, this, &ModemConnectionAutomator::onStarted);
-          _thread->start();
+          try
+          {
+            _mcm = new ModemConnectionManager(new SIM7600E_H);
+            _mcm->moveToThread(_thread);
+            _thread->start();
+          }
+          catch (global::Exception &ex)
+          {
+            _mcm->deleteLater();
+            SIM7600E_H::reset();
+          }
         }
       }
     }
     break;
   }
-  //    if (_mcm)
-  //    {
-  //    }
 }

@@ -7,6 +7,12 @@ SIM7600E_H::SIM7600E_H()
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+QByteArray SIM7600E_H::name() const
+{
+  return "SIM7600E";
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 bool SIM7600E_H::reset()
 {
   QProcess reset;
@@ -112,4 +118,28 @@ bool SIM7600E_H::parseResponse(const QByteArray &data)
     return true;
   }
   return false;
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+quint32 SIM7600E_H::baudRate() const
+{
+  return 115200;
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+QByteArray SIM7600E_H::portConnection() const
+{
+  return "/dev/ttyUSB2";
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+QByteArray SIM7600E_H::portService() const
+{
+  return "/dev/ttyUSB3";
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+QByteArray SIM7600E_H::portGps() const
+{
+  return "/dev/ttyUSB4";
 }

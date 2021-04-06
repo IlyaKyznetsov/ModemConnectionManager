@@ -11,7 +11,6 @@ class MODEMCONNECTIONMANAGER_EXPORT ModemConnectionAutomator : public QObject
 public:
   explicit ModemConnectionAutomator(const QString &path = QString(), QObject *parent = nullptr);
   ~ModemConnectionAutomator();
-
   const Modem::State &state() const;
 
 Q_SIGNALS:
@@ -33,7 +32,7 @@ private:
   ModemConnectionAutomator &operator=(const ModemConnectionAutomator &) = delete;
   ModemConnectionAutomator &operator=(ModemConnectionAutomator &&) = delete;
 
-  QThread *_thread;
+  QThread *_thread = nullptr;
   ModemConnectionManager *_mcm = nullptr;
   Modem::State _state;
 };

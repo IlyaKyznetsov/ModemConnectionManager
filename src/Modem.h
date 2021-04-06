@@ -56,14 +56,16 @@ public:
       QString PrimaryDNS;
       QString SecondaryDNS;
     } internet;
-    bool status() const { return modem.status && sim.status && network.status && internet.status; }
   };
 
-  QByteArray portConnection = "/dev/ttyUSB2";
-  QByteArray portService = "/dev/ttyUSB3";
-  QByteArray portGps = "/dev/ttyUSB4";
   State state;
-  virtual bool reset() = 0;
+  bool status() const;
+  virtual QByteArray name() const = 0;
+  virtual quint32 baudRate() const = 0;
+  virtual QByteArray portConnection() const = 0;
+  virtual QByteArray portService() const = 0;
+  virtual QByteArray portGps() const = 0;
+//  virtual bool reset() = 0;
   virtual QList<QByteArray> commands() const = 0;
   virtual bool parseResponse(const QByteArray &data) = 0;
   virtual QByteArray chatConfiguration(const QByteArray &phone, const QString &accessPoint) const;
