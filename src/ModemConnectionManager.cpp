@@ -8,8 +8,9 @@
 #include <QRegularExpression>
 #include <QSettings>
 #include <QTimer>
+#include <QUdev.h>
 #include <QtSerialPort/QSerialPort>
-
+#include <modems/SIM7600E_H.h>
 #include <signal.h>
 
 #include "Global.h"
@@ -127,31 +128,6 @@ inline void clearState(Modem::State &state, bool all)
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-void ModemConnectionManager::setModem(Modem *modem)
-{
-  _modem = std::move(modem);
-  DF(_modem << modem);
-  if (!_modem)
-  {
-    _pppdCommand.clear();
-    return;
-  }
-
-  const QByteArray port = modem->portConnection();
-  _pppdCommand = "/usr/sbin/pppd " + port.mid(port.lastIndexOf('/') + 1) + " " +
-                 QByteArray::number(_modem->baudRate()) + " " + _options + " connect " +
-                 _modem->chatConfiguration(_phone, _accessPoint);
-  if (!_user.isEmpty())
-    _pppdCommand += " user " + _user;
-}
-
-/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-QByteArray ModemConnectionManager::modemName() const
-{
-  return (_modem ? _modem->name() : QByteArray());
-}
-
-/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 Modem::State ModemConnectionManager::state() const
 {
   return _modem->state;
@@ -219,6 +195,14 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
   connect(_pppd, &QProcess::readyReadStandardOutput, this, &ModemConnectionManager::_pppdOutput);
   connect(_pppd, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
           &ModemConnectionManager::_pppdFinished);
+
+  // QUdev
+  auto &udev = QUdev::instance();
+  connect(&udev, &QUdev::qudevDeviceEvent, this, &ModemConnectionManager::_qudevDeviceEvent, Qt::QueuedConnection);
+  udev.addMonitoringDevice(QUdevMonitoringDevice(
+      "SIM7600E", {{"SUBSYSTEM", "tty"}, {"ID_VENDOR_ID", "1e0e"}, {"ID_MODEL_ID", "9001"}}, {"DEVPATH"}));
+  udev.enumerateAllDevices();
+  udev.runMonitoring();
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
@@ -320,6 +304,31 @@ bool ModemConnectionManager::reset()
     emit stateChanged(_modem->state);
   }
   return isOk;
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+void ModemConnectionManager::_qudevDeviceEvent(const QUdevDevice &event)
+{
+  const auto type = event.type();
+  const auto name = event.name();
+  DF(toString(type) + ':' + name);
+  switch (type)
+  {
+    case QUdevDevice::Unknown:
+    case QUdevDevice::None:
+    case QUdevDevice::Change: return;
+    case QUdevDevice::Remove:
+    case QUdevDevice::Unbind:
+    {
+    }
+    break;
+    case QUdevDevice::Bind:
+    case QUdevDevice::Add:
+    case QUdevDevice::Exist:
+    {
+    }
+    break;
+  }
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/

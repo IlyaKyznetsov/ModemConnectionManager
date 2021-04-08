@@ -24,7 +24,6 @@ public Q_SLOTS:
 private Q_SLOTS:
   void onStarted();
   void onStateChanged(const Modem::State &state);
-  void qudevDeviceEvent(const QUdevDevice &event);
 
 private:
   ModemConnectionAutomator(const ModemConnectionAutomator &) = delete;
