@@ -153,8 +153,8 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
   settings.beginGroup("Connection Settings");
   _reconnectionHope = _connectionHopes = settings.value("ResetConnectionHopes", 0).toInt();
   const int reconnectionTimeout = settings.value("ReconnectTimeout", 0).toInt();
-  const QByteArray phone = settings.value("Phone").toByteArray();
-  if (phone.isEmpty())
+  _phone = settings.value("Phone").toByteArray();
+  if (_phone.isEmpty())
     throw global::Exception("[Connection Settings] Phone not exist");
   _user = settings.value("User").toByteArray();
   const QByteArray password = settings.value("Password").toByteArray();
@@ -334,6 +334,7 @@ void ModemConnectionManager::_qudevDeviceEvent(const QUdevDevice &event)
             {
               disconnection();
               _modem.reset();
+              _pppdCommand.clear();
               emit stateChanged(Modem::State());
             }
             return;
@@ -359,7 +360,20 @@ void ModemConnectionManager::_qudevDeviceEvent(const QUdevDevice &event)
             {
               _modem.reset(new SIM7600E_H());
               bool isOk = _modem->initialize();
+              emit stateChanged(_modem->state);
               D("Modem initialize:" << isOk);
+              if (isOk)
+              {
+                const QByteArray port = _modem->portConnection();
+                _pppdCommand = "/usr/sbin/pppd " + port.mid(port.lastIndexOf('/') + 1) + " " +
+                               QByteArray::number(_modem->baudRate()) + " " + _options + " connect " +
+                               _modem->chatConfiguration(_phone, _accessPoint);
+                if (!_user.isEmpty())
+                  _pppdCommand += " user " + _user;
+
+                isOk = connection();
+                D("Internet connection:" << isOk);
+              }
             }
             return;
           }
@@ -387,7 +401,7 @@ void ModemConnectionManager::_pppdOutput()
   bool isStateChanged = _modem->parseResponse(data);
 
   // Parse Pppd output
-  QRegularExpression rx("Using interface (\\S+) ");
+  QRegularExpression rx("Using interface\\s+(\\S+)\\s+");
   QRegularExpressionMatch match = rx.match(data);
   match = rx.match(data);
   if (match.isValid() && match.hasMatch())
@@ -400,7 +414,7 @@ void ModemConnectionManager::_pppdOutput()
       "(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.(25[0-5]|2[0-4]["
       "0-9]|[01]?[0-9][0-9]?)\\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)";
 
-  rx.setPattern(QString("remote IP address (%1)").arg(ip4));
+  rx.setPattern(QString("remote\\s+IP\\s+address\\s+(%1)").arg(ip4));
   match = rx.match(data);
   if (match.isValid() && match.hasMatch())
   {
@@ -408,7 +422,7 @@ void ModemConnectionManager::_pppdOutput()
     isStateChanged = true;
   }
 
-  rx.setPattern(QString("local IP address (%1)").arg(ip4));
+  rx.setPattern(QString("local\\s+IP\\s+address\\s+(%1)").arg(ip4));
   match = rx.match(data);
   if (match.isValid() && match.hasMatch())
   {
@@ -416,7 +430,7 @@ void ModemConnectionManager::_pppdOutput()
     isStateChanged = true;
   }
 
-  rx.setPattern(QString("primary DNS address (%1)").arg(ip4));
+  rx.setPattern(QString("primary\\s+DNS\\s+address\\s+(%1)").arg(ip4));
   match = rx.match(data);
   if (match.isValid() && match.hasMatch())
   {
@@ -424,7 +438,7 @@ void ModemConnectionManager::_pppdOutput()
     isStateChanged = true;
   }
 
-  rx.setPattern(QString("secondary DNS address (%1)").arg(ip4));
+  rx.setPattern(QString("secondary\\s+DNS\\s+address\\s+(%1)").arg(ip4));
   match = rx.match(data);
   if (match.isValid() && match.hasMatch())
   {

@@ -76,7 +76,6 @@ void ModemConnectionAutomator::onStarted()
   PF();
   qRegisterMetaType<Modem::State>("Modem::State");
   connect(_mcm, &ModemConnectionManager::stateChanged, this, &ModemConnectionAutomator::onStateChanged);
-  connection();
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/

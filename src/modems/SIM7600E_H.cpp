@@ -39,7 +39,7 @@ bool SIM7600E_H::parseResponse(const QByteArray &data)
 
   if ("ATI" == cmd)
   {
-    QRegularExpression rx("Manufacturer: (.*) Model: (.*) Revision: (.*) IMEI: (.*) \\+GCAP");
+    QRegularExpression rx("Manufacturer:\\s+(.*)\\s+Model:\\s+(.*)\\s+Revision:\\s+(.*)\\s+IMEI:\\s+(.*)\\s+\\+GCAP");
     QRegularExpressionMatch match = rx.match(data);
     if (!match.isValid() || !match.hasMatch())
       return false;
@@ -51,11 +51,11 @@ bool SIM7600E_H::parseResponse(const QByteArray &data)
   }
   else if ("AT+CICCID" == cmd)
   {
-    QRegularExpression rx("\\+ICCID: (.*)  OK");
+    QRegularExpression rx("\\+ICCID:\\s+(.*)\\s+OK");
     QRegularExpressionMatch match = rx.match(data);
     if (!match.isValid() || !match.hasMatch())
     {
-      rx.setPattern("(\\+CME ERROR: (.*)|ERROR)");
+      rx.setPattern("(\\+CME\\s+ERROR:\\s+(.*)|ERROR)");
       QRegularExpressionMatch match = rx.match(data);
       if (!match.isValid() || !match.hasMatch())
         return false;
@@ -68,11 +68,11 @@ bool SIM7600E_H::parseResponse(const QByteArray &data)
   }
   else if ("AT+CSPN?" == cmd)
   {
-    QRegularExpression rx("\\+CSPN: \"(.*)\",[0-1]  OK");
+    QRegularExpression rx("\\+CSPN:\\s+\"(.*)\",[0-1]\\s+OK");
     QRegularExpressionMatch match = rx.match(data);
     if (!match.isValid() || !match.hasMatch())
     {
-      rx.setPattern("(\\+CME ERROR: (.*)|ERROR)");
+      rx.setPattern("(\\+CME\\s+ERROR:\\s+(.*)|ERROR)");
       QRegularExpressionMatch match = rx.match(data);
       if (!match.isValid() || !match.hasMatch())
         return false;
@@ -85,7 +85,7 @@ bool SIM7600E_H::parseResponse(const QByteArray &data)
   }
   else if ("AT+CREG?" == cmd)
   {
-    QRegularExpression rx("\\+CREG: ([0-9],[0-9])  OK");
+    QRegularExpression rx("\\+CREG:\\s+([0-9],[0-9])\\s+OK");
     QRegularExpressionMatch match = rx.match(data);
     if (!match.isValid() || !match.hasMatch())
       return false;
@@ -94,7 +94,7 @@ bool SIM7600E_H::parseResponse(const QByteArray &data)
   }
   else if ("AT+CGREG?" == cmd)
   {
-    QRegularExpression rx("\\+CGREG: ([0-9],[0-9])  OK");
+    QRegularExpression rx("\\+CGREG:\\s+([0-9],[0-9])\\s+OK");
     QRegularExpressionMatch match = rx.match(data);
     if (!match.isValid() || !match.hasMatch())
       return false;
