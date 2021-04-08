@@ -240,7 +240,6 @@ bool ModemConnectionManager::connection()
   const int pid = (isStarted ? _pppd->processId() : -1);
   if (pid != _modem->state.internet.PID)
   {
-
     _modem->state.internet.PID = pid;
     emit stateChanged(_modem->state);
   }
@@ -362,7 +361,9 @@ void ModemConnectionManager::_qudevDeviceEvent(const QUdevDevice &event)
               bool isOk = _modem->initialize();
               emit stateChanged(_modem->state);
               D("Modem initialize:" << isOk);
-              if (isOk)
+              if (!isOk)
+                reset();
+              else
               {
                 const QByteArray port = _modem->portConnection();
                 _pppdCommand = "/usr/sbin/pppd " + port.mid(port.lastIndexOf('/') + 1) + " " +
