@@ -5,7 +5,7 @@
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 QByteArray SIM7600E_H::name() const
 {
-  return "SIM7600E";
+  return "SIM7600E_H";
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
@@ -33,7 +33,8 @@ bool SIM7600E_H::parseResponse(const QByteArray &data)
   int index = data.indexOf(' ');
   if (-1 == index)
     return false;
-  //  DF(data);
+
+  DF(data);
   const QByteArray &cmd = data.left(index);
 
   if ("ATI" == cmd)

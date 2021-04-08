@@ -200,7 +200,7 @@ ModemConnectionManager::ModemConnectionManager(const QString &path, QObject *par
   auto &udev = QUdev::instance();
   connect(&udev, &QUdev::qudevDeviceEvent, this, &ModemConnectionManager::_qudevDeviceEvent, Qt::QueuedConnection);
   udev.addMonitoringDevice(QUdevMonitoringDevice(
-      "SIM7600E", {{"SUBSYSTEM", "tty"}, {"ID_VENDOR_ID", "1e0e"}, {"ID_MODEL_ID", "9001"}}, {"DEVPATH"}));
+      "SIM7600E_H", {{"SUBSYSTEM", "tty"}, {"ID_VENDOR_ID", "1e0e"}, {"ID_MODEL_ID", "9001"}}, {"DEVPATH"}));
   udev.enumerateAllDevices();
   udev.runMonitoring();
 }
@@ -285,9 +285,7 @@ void ModemConnectionManager::disconnection()
     emit stateChanged(_modem->state);
   }
   else
-  {
     emit stateChanged(Modem::State());
-  }
   DF("Finished");
 }
 
@@ -311,23 +309,65 @@ void ModemConnectionManager::_qudevDeviceEvent(const QUdevDevice &event)
 {
   const auto type = event.type();
   const auto name = event.name();
-  DF(toString(type) + ':' + name);
   switch (type)
   {
+    // Ignored events
     case QUdevDevice::Unknown:
     case QUdevDevice::None:
     case QUdevDevice::Change: return;
-    case QUdevDevice::Remove:
-    case QUdevDevice::Unbind:
+    default:
     {
+      // Modem exist
+      if (_modem)
+      {
+        switch (type)
+        {
+          case QUdevDevice::Bind:
+          case QUdevDevice::Add:
+          case QUdevDevice::Exist: return;
+          case QUdevDevice::Remove:
+          case QUdevDevice::Unbind:
+          {
+            DF(toString(type) + ':' + name);
+            // Modem remove
+            if (_modem->name() == name)
+            {
+              disconnection();
+              _modem.reset();
+              emit stateChanged(Modem::State());
+            }
+            return;
+          }
+          break;
+          default: return;
+        }
+      }
+      // Modem not exist
+      else
+      {
+        switch (type)
+        {
+          case QUdevDevice::Remove:
+          case QUdevDevice::Unbind: return;
+          case QUdevDevice::Bind:
+          case QUdevDevice::Add:
+          case QUdevDevice::Exist:
+          {
+            DF(toString(type) + ':' + name);
+            // Modem add
+            if ("SIM7600E_H" == name)
+            {
+              _modem.reset(new SIM7600E_H());
+              bool isOk = _modem->initialize();
+              D("Modem initialize:" << isOk);
+            }
+            return;
+          }
+          break;
+          default: return;
+        }
+      }
     }
-    break;
-    case QUdevDevice::Bind:
-    case QUdevDevice::Add:
-    case QUdevDevice::Exist:
-    {
-    }
-    break;
   }
 }
 
