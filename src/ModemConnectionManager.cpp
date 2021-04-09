@@ -362,9 +362,7 @@ void ModemConnectionManager::_qudevDeviceEvent(const QUdevDevice &event)
               bool isOk = _modem->initialize();
               emit stateChanged(_modem->state);
               D("Modem initialize:" << isOk);
-              if (!isOk)
-                reset();
-              else
+              if (isOk)
               {
                 const QByteArray port = _modem->portConnection();
                 _pppdCommand = "/usr/sbin/pppd " + port.mid(port.lastIndexOf('/') + 1) + " " +
