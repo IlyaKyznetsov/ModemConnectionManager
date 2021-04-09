@@ -33,14 +33,16 @@ bool Modem::initialize()
     if (data.isEmpty())
       return false;
     data.replace("\r\n", " ");
-    parseResponse(data, command);
-    return true;
+    const Modem::CommandStatus status = parseResponse(data, command);
+    D("AT_COMMAND:" << toString(status) << command << data);
+    return Modem::CommandStatus::Success == status;
   };
 
   for (const auto &command : atCommands)
   {
     if (!modemCommand(command))
     {
+      D("Error AT_COMMAND:" << command);
       servicePort.close();
       return false;
     }
