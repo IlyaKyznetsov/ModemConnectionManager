@@ -69,7 +69,7 @@ public:
   Modem() = default;
   virtual ~Modem() = default;
   bool initialize();
-  virtual bool reset() = 0;
+  virtual void reset() = 0;
   virtual QByteArray name() const = 0;
   virtual quint32 baudRate() const = 0;
   virtual QByteArray portConnection() const = 0;

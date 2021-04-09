@@ -6,7 +6,6 @@ bool Modem::initialize()
 {
   PF();
   const QList<QByteArray> atCommands = commands();
-  D("Commands:" << atCommands);
   if (atCommands.isEmpty())
     return true;
 
@@ -34,7 +33,6 @@ bool Modem::initialize()
       return false;
     data.replace("\r\n", " ");
     const Modem::CommandStatus status = parseResponse(data, command);
-    D("AT_COMMAND:" << toString(status) << command << data);
     return Modem::CommandStatus::Success == status;
   };
 
@@ -42,7 +40,6 @@ bool Modem::initialize()
   {
     if (!modemCommand(command))
     {
-      D("Error AT_COMMAND:" << command);
       servicePort.close();
       return false;
     }

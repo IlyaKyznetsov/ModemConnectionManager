@@ -258,10 +258,16 @@ bool ModemConnectionManager::connection()
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+void ModemConnectionManager::disconnection(const bool isAutoConnection)
+{
+  _isAutoConnection = isAutoConnection;
+  disconnection();
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 void ModemConnectionManager::disconnection()
 {
   DF(_pppd);
-
   if (_reconnectionTimer)
   {
     if (!_pppd->signalsBlocked())
@@ -289,14 +295,13 @@ void ModemConnectionManager::disconnection()
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-bool ModemConnectionManager::reset()
+void ModemConnectionManager::reset()
 {
   PF();
   if (_connectionHopes)
     _reconnectionHope = _connectionHopes;
-  bool isOk = _modem->reset();
+  _modem->reset();
   emit stateChanged(Modem::State());
-  return isOk;
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
@@ -367,9 +372,8 @@ void ModemConnectionManager::_qudevDeviceEvent(const QUdevDevice &event)
                                _modem->chatConfiguration(_phone, _accessPoint);
                 if (!_user.isEmpty())
                   _pppdCommand += " user " + _user;
-
-                isOk = connection();
-                D("Internet connection:" << isOk);
+                if (_isAutoConnection)
+                  connection();
               }
             }
             return;
@@ -385,7 +389,7 @@ void ModemConnectionManager::_qudevDeviceEvent(const QUdevDevice &event)
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 void ModemConnectionManager::_pppdOutput()
 {
-  PF();
+  //  PF();
 
   QByteArray data = _pppd->readAllStandardOutput().simplified();
   if (data.isEmpty())
@@ -394,7 +398,7 @@ void ModemConnectionManager::_pppdOutput()
 
   // Parse AT Commands responses
   Modem::CommandStatus commandStatus = _modem->parseResponse(data);
-  D("Modem response:" << toString(commandStatus) << data);
+  //  D("Modem response:" << toString(commandStatus) << data);
   bool isStateChanged = commandStatus != Modem::CommandStatus::None;
 
   // Parse Pppd output

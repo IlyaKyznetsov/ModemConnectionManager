@@ -19,7 +19,7 @@ Q_SIGNALS:
 public Q_SLOTS:
   bool connection();
   void disconnection();
-  bool modemHardReset();
+  void modemHardReset();
 
 private Q_SLOTS:
   void onStarted();

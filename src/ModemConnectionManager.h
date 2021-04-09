@@ -24,7 +24,8 @@ Q_SIGNALS:
 public Q_SLOTS:
   bool connection();
   void disconnection();
-  bool reset();
+  void disconnection(const bool isAutoConnection);
+  void reset();
 
 private Q_SLOTS:
   void _qudevDeviceEvent(const QUdevDevice &event);
@@ -37,6 +38,7 @@ private:
   ModemConnectionManager &operator=(const ModemConnectionManager &) = delete;
   ModemConnectionManager &operator=(ModemConnectionManager &&) = delete;
 
+  bool _isAutoConnection = true;
   int _connectionHopes = 0;
   int _reconnectionHope = 0;
   QSharedPointer<Modem> _modem;

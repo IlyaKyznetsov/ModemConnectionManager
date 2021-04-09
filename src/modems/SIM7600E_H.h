@@ -9,7 +9,7 @@ public:
   SIM7600E_H() = default;
 
   // Modem interface
-  virtual bool reset() override;
+  virtual void reset() override;
   virtual QByteArray name() const override;
   virtual QList<QByteArray> commands() const override;
   virtual QByteArray chatConfiguration(const QByteArray &phone, const QString &accessPoint) const override;

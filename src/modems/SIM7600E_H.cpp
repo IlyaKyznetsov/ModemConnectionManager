@@ -9,7 +9,7 @@ QByteArray SIM7600E_H::name() const
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-bool SIM7600E_H::reset()
+void SIM7600E_H::reset()
 {
   PF();
   QProcess::execute("/usr/sbin/i2cset -f -y -m 0x40 0 0x20 1 0x40");
@@ -42,7 +42,7 @@ Modem::CommandStatus SIM7600E_H::parseResponse(const QByteArray &data, const QBy
 {
 
   int index = (command.isEmpty() ? data.indexOf(' ') : data.indexOf(command));
-  DF(command << index << data);
+  //  DF(command << index << data);
   if (-1 == index)
     return Modem::CommandStatus::None;
   const QByteArray &cmd = (command.isEmpty() ? data.left(index) : command);

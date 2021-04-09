@@ -18,7 +18,7 @@ ModemConnectionAutomator::~ModemConnectionAutomator()
   PF();
   if (_mcm)
   {
-    _mcm->disconnection();
+    _mcm->disconnection(false);
     _mcm->deleteLater();
   }
   _thread->quit();
@@ -54,20 +54,20 @@ void ModemConnectionAutomator::disconnection()
     QMetaObject::invokeMethod(_mcm, "disconnection", Qt::BlockingQueuedConnection);
     return;
   }
-  _mcm->disconnection();
+  _mcm->disconnection(false);
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-bool ModemConnectionAutomator::modemHardReset()
+void ModemConnectionAutomator::modemHardReset()
 {
   PF();
   if (QThread::currentThread() != _thread)
   {
     bool result(false);
     QMetaObject::invokeMethod(_mcm, "modemHardReset", Qt::BlockingQueuedConnection, Q_RETURN_ARG(bool, result));
-    return result;
+    return;
   }
-  return _mcm->reset();
+  _mcm->reset();
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
