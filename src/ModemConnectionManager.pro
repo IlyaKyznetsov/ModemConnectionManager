@@ -2,8 +2,8 @@ QT -= gui
 QT += serialport
 
 ### Library ###
-TEMPLATE = app
-#TEMPLATE = lib
+#TEMPLATE = app
+TEMPLATE = lib
 DEFINES += MODEMCONNECTIONMANAGER_LIBRARY
 # Default rules for deployment.
 unix {

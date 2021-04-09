@@ -27,12 +27,12 @@ int main(int argc, char *argv[])
 {
   QCoreApplication a(argc, argv);
 
-  //  ModemConnectionAutomator mca;
-  //  QObject::connect(&mca, &ModemConnectionAutomator::stateChanged, &onStateChanged);
+  ModemConnectionAutomator mca;
+  QObject::connect(&mca, &ModemConnectionAutomator::stateChanged, &onStateChanged);
 
-  ModemConnectionManager mcm;
-  QObject::connect(&mcm, &ModemConnectionManager::stateChanged, &onStateChanged);
-  mcm.disconnection(false);
+  //  ModemConnectionManager mcm;
+  //  QObject::connect(&mcm, &ModemConnectionManager::stateChanged, &onStateChanged);
+  //  mcm.disconnection(false);
 
   return a.exec();
 }

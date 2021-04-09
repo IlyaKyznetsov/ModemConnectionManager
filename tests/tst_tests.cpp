@@ -3,7 +3,6 @@
 
 // add necessary includes here
 #include "Global.h"
-#include "ModemCommander.h"
 #include "ModemConnectionAutomator.h"
 #include "ModemConnectionManager.h"
 
@@ -20,9 +19,8 @@ private slots:
   void cleanupTestCase();
   void onStateChanged(const Modem::State &state);
 
-  void test_ModemState();
   bool haveInternet();
-  void testConnection();
+//  void testConnection();
   void testConnectionAutomation();
 };
 
@@ -52,21 +50,6 @@ void test_ModemConnectionManager::onStateChanged(const Modem::State &state)
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-void test_ModemConnectionManager::test_ModemState()
-{
-  QByteArray port = "/dev/ttyUSB3";
-  QByteArray baud = "115200";
-  ModemCommander mc(port, baud.toInt());
-  mc.sendCommand("ATI");
-  mc.sendCommand("AT+CICCID");
-  mc.sendCommand("AT+CSPN?");
-  bool isOk = mc.modem().state.status();
-  QVERIFY(isOk);
-  if (!isOk)
-    QSKIP("skipping all");
-}
-
-/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 bool test_ModemConnectionManager::haveInternet()
 {
   QProcess ping;
@@ -76,6 +59,7 @@ bool test_ModemConnectionManager::haveInternet()
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+/*
 void test_ModemConnectionManager::testConnection()
 {
   ModemConnectionManager modem;
@@ -84,7 +68,6 @@ void test_ModemConnectionManager::testConnection()
   connect(&modem, &ModemConnectionManager::stateChanged, this, &test_ModemConnectionManager::onStateChanged,
           Qt::QueuedConnection);
   QSignalSpy spy(&modem, &ModemConnectionManager::stateChanged);
-  modem.connection();
 
   while (modem.state().internet.LocalAddress.isEmpty() && (spy.count() < 20))
   {
@@ -99,7 +82,7 @@ void test_ModemConnectionManager::testConnection()
   modem.disconnection();
   QVERIFY(!haveInternet());
 }
-
+*/
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 void test_ModemConnectionManager::testConnectionAutomation()
 {
