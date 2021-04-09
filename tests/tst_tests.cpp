@@ -20,27 +20,32 @@ private slots:
   void onStateChanged(const Modem::State &state);
 
   bool haveInternet();
-//  void testConnection();
   void testConnectionAutomation();
+  //void SimpleExample();
 };
 
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 test_ModemConnectionManager::test_ModemConnectionManager()
 {
   PF();
 }
 
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 test_ModemConnectionManager::~test_ModemConnectionManager()
 {
 }
 
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 void test_ModemConnectionManager::initTestCase()
 {
 }
 
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 void test_ModemConnectionManager::cleanupTestCase()
 {
 }
 
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 void test_ModemConnectionManager::onStateChanged(const Modem::State &state)
 {
   PF();
@@ -58,31 +63,6 @@ bool test_ModemConnectionManager::haveInternet()
   return ping.exitCode() == 0;
 }
 
-/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-/*
-void test_ModemConnectionManager::testConnection()
-{
-  ModemConnectionManager modem;
-
-  QVERIFY(!haveInternet());
-  connect(&modem, &ModemConnectionManager::stateChanged, this, &test_ModemConnectionManager::onStateChanged,
-          Qt::QueuedConnection);
-  QSignalSpy spy(&modem, &ModemConnectionManager::stateChanged);
-
-  while (modem.state().internet.LocalAddress.isEmpty() && (spy.count() < 20))
-  {
-    I("WAIT" << spy.count());
-    spy.wait(3000);
-  }
-
-  QVERIFY(haveInternet());
-  spy.clear();
-  D("TERMINATE");
-  onStateChanged(modem.state());
-  modem.disconnection();
-  QVERIFY(!haveInternet());
-}
-*/
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 void test_ModemConnectionManager::testConnectionAutomation()
 {
@@ -105,6 +85,15 @@ void test_ModemConnectionManager::testConnectionAutomation()
   mca.disconnection();
   QVERIFY(!haveInternet());
 }
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+// void test_ModemConnectionManager::SimpleExample()
+//{
+//  ModemConnectionAutomator mca;
+//  connect(&mca, &ModemConnectionAutomator::stateChanged, this, &test_ModemConnectionManager::onStateChanged,
+//          Qt::QueuedConnection);
+//  qApp->exec();
+//}
 
 QTEST_MAIN(test_ModemConnectionManager)
 
