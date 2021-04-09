@@ -130,7 +130,7 @@ inline void clearState(Modem::State &state, bool all)
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 Modem::State ModemConnectionManager::state() const
 {
-  return _modem->state;
+  return (_modem ? _modem->state : Modem::State());
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
@@ -295,11 +295,7 @@ bool ModemConnectionManager::reset()
   if (_connectionHopes)
     _reconnectionHope = _connectionHopes;
   bool isOk = _modem->reset();
-  if (isOk)
-  {
-    clearState(_modem->state, true);
-    emit stateChanged(_modem->state);
-  }
+  emit stateChanged(Modem::State());
   return isOk;
 }
 
@@ -396,10 +392,10 @@ void ModemConnectionManager::_pppdOutput()
     return;
   data.replace("^M", "");
 
-  D(data);
-
   // Parse AT Commands responses
-  bool isStateChanged = _modem->parseResponse(data);
+  Modem::CommandStatus commandStatus = _modem->parseResponse(data);
+  D("Modem response:" << toString(commandStatus) << data);
+  bool isStateChanged = commandStatus != Modem::CommandStatus::None;
 
   // Parse Pppd output
   QRegularExpression rx("Using interface\\s+(\\S+)\\s+");
@@ -449,8 +445,6 @@ void ModemConnectionManager::_pppdOutput()
 
   if (isStateChanged)
     emit stateChanged(_modem->state);
-
-  return;
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/

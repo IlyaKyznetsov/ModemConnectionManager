@@ -58,10 +58,16 @@ public:
     } internet;
   };
 
+  enum class CommandStatus
+  {
+    None,
+    Success,
+    Error
+  };
+
   State state;
   Modem() = default;
   virtual ~Modem() = default;
-  bool status() const;
   bool initialize();
   virtual bool reset() = 0;
   virtual QByteArray name() const = 0;
@@ -70,8 +76,12 @@ public:
   virtual QByteArray portService() const = 0;
   virtual QByteArray portGps() const = 0;
   virtual QList<QByteArray> commands() const = 0;
-  virtual bool parseResponse(const QByteArray &data) = 0;
   virtual QByteArray chatConfiguration(const QByteArray &phone, const QString &accessPoint) const;
+  virtual CommandStatus parseResponse(const QByteArray &data, const QByteArray &command = QByteArray()) = 0;
+
+protected:
+  QByteArray baseChatConfiguration(const QByteArray &phone, const QString &accessPoint,
+                                   const QList<QByteArray> &chatATCommands) const;
 
 private:
   Modem(const Modem &) = delete;
@@ -80,6 +90,7 @@ private:
   Modem &operator=(Modem &&) = delete;
   bool modemCommand(const QByteArray &ATCommand);
 };
+QString toString(Modem::CommandStatus status);
 QString toString(Modem::State::Network::registration status);
 QString toString(Modem::State::Network::gprs status);
 QStringList toStringList(const Modem::State &state);

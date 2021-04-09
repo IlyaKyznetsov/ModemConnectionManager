@@ -12,7 +12,8 @@ public:
   virtual bool reset() override;
   virtual QByteArray name() const override;
   virtual QList<QByteArray> commands() const override;
-  virtual bool parseResponse(const QByteArray &data) override;
+  virtual QByteArray chatConfiguration(const QByteArray &phone, const QString &accessPoint) const override;
+  virtual CommandStatus parseResponse(const QByteArray &data, const QByteArray &command) override;
   virtual quint32 baudRate() const override;
   virtual QByteArray portConnection() const override;
   virtual QByteArray portService() const override;
